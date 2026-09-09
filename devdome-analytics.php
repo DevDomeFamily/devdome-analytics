@@ -3,7 +3,7 @@
  * Plugin Name: DevDome Analytics
  * Plugin URI: https://devdome.com/features/analytics
  * Description: Traffic analytics, visitor statistics and click tracking for WordPress, with AI referral detection and bot-filtered numbers.
- * Version: 1.0.6
+ * Version: 1.0.7
  * Author: DevDome
  * Author URI: https://devdome.com
  * License: GPLv2 or later
@@ -30,7 +30,7 @@ if ( file_exists( __DIR__ . '/wporg-build.php' ) ) {
 	require __DIR__ . '/wporg-build.php';
 }
 
-define( 'DEVDALYT_VERSION', '1.0.6' );
+define( 'DEVDALYT_VERSION', '1.0.7' );
 define( 'DEVDALYT_FILE', __FILE__ );
 define( 'DEVDALYT_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DEVDALYT_URL', plugin_dir_url( __FILE__ ) );

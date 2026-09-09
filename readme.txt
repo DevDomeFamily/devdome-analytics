@@ -4,7 +4,7 @@ Tags: analytics, traffic analytics, bot traffic, ai referrals, click tracking
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.0.6
+Stable tag: 1.0.7
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -226,7 +226,21 @@ One file is generated: `assets/devdome-tools-tw.css`, the admin screen's stylesh
 
 Those two build inputs are not included in the distributed package. Ask for them at https://devdome.com/contact and we will send them.
 
+== Screenshots ==
+
+1. DevDome Analytics inside wp-admin: visitors, live visitors, bots, clicks, pageviews, pages per visit, session duration and bounce rate.
+2. Plugin settings: cookieless tracking, outbound clicks, AI referrals, bot visits, Do Not Track and admin exclusion.
+3. DevDome Analytics dashboard: WordPress visitor statistics for 30 days with visits, unique visitors, pageviews, clicks and bot hits counted separately from humans, plus the pages table.
+4. Countries: world map and per-country visits, visitors, bot hits, clicks and pageviews.
+5. Pages report: per-page visits, visitors, pageviews, referrers, outbound click tracking, countries, browsers, OS and devices.
+6. Referrers report: traffic sources for human visitors, search engines, social networks, AI assistants and other sites.
+7. Devices report: desktop, mobile and tablet with pageviews, visitors, clicks, countries, browsers, OS, top pages and referrers.
+
 == Changelog ==
+
+= 1.0.7 =
+* Settings: every switch now shows a one line hint with an info icon holding the full explanation of what is sent and what turning it off changes, the same layout as DevDome Malware Scanner.
+* DevDome Dashboard: installing another DevDome plugin from the dashboard no longer activates it, you activate it yourself from its card. Output escaping tightened.
 
 = 1.0.6 =
 * DevDome Dashboard: plugin list, descriptions, logos and versions now come from devdome.com, one-click install of DevDome plugins from WordPress.org, Docs link and Fix buttons, Activate stays on the dashboard.

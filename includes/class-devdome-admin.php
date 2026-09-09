@@ -20,19 +20,24 @@ class DEVDALYT_Admin {
 	 * build_state(), where every get_option() key is a literal at its call site.
 	 */
 	const SWITCHES = array(
-		array( 'tracking',   'Enable Tracking',      'Master switch. Sends pageviews to DevDome to power your dashboard.' ),
-		array( 'clicks',     'Track Clicks',         'Record clicks on the page.' ),
-		array( 'outbound',   'Track Outbound Links', 'Record clicks that leave your site.' ),
-		array( 'ai',         'Track AI Referrals',   'Detect visits referred by AI assistants (ChatGPT, Perplexity, …).' ),
-		array( 'bots',       'Track Bot Visits',     'Record known crawler / bot hits.' ),
-		array( 'dnt_admins', 'Do Not Track Admins',  'Skip tracking for logged-in administrators.' ),
-		array( 'dnt',        'Respect Do Not Track', 'Honor the browser "Do Not Track" signal.' ),
+		array( 'tracking', 'Enable Tracking', 'Master switch. Sends pageviews to DevDome to power your dashboard.', 'Off means no pageview leaves the site and the dashboard stops updating. Only anonymous page, referrer, country, device and browser data is sent, never names, emails or full IP addresses.' ),
+		array( 'clicks', 'Track Clicks', 'Record clicks on the page.', 'Every click on a link or button is counted per page, so you can see which elements get used. Only the element and the page are sent, nothing personal.' ),
+		array( 'outbound', 'Track Outbound Links', 'Record clicks that leave your site.', 'Clicks on links to other sites are recorded with their destination, which powers the exit links report. Off means the outbound click numbers stay empty.' ),
+		array( 'ai', 'Track AI Referrals', 'Detect visits referred by AI assistants (ChatGPT, Perplexity, …).', 'Visits arriving from ChatGPT, Perplexity, Claude, Gemini and similar assistants are labelled as AI referrals, so you can see how much traffic AI answers bring you.' ),
+		array( 'bots', 'Track Bot Visits', 'Record known crawler / bot hits.', 'Known crawlers and bots, including search engines, SEO tools and AI crawlers, are recorded separately from human visitors. Off means bots are dropped entirely and the bots report stays empty. Human numbers are never inflated either way.' ),
+		array( 'dnt_admins', 'Do Not Track Admins', 'Skip tracking for logged-in administrators.', 'Logged-in administrators are not counted, so your own editing sessions do not inflate the visitor numbers.' ),
+		array( 'dnt', 'Respect Do Not Track', 'Honor the browser "Do Not Track" signal.', 'Browsers that send the Do Not Track signal are not tracked at all. Some privacy laws expect this. The cost is a slightly lower visitor count.' ),
 		// The consent warning is part of the switch, not buried in a doc. Off by default on new
 		// sites: DevDome then writes NOTHING to a visitor's device and needs no cookie banner.
-		array( 'returning',  'Track Returning Visitors', 'Sets a first-party cookie so the same visitor is recognised across days, and clicks can be tied back to their visit (needed for affiliate attribution). You may need visitor consent for this. Leave it off and DevDome stores nothing on your visitors\' devices.' ),
+		array( 'returning',  'Track Returning Visitors', 'Off by default. Stores nothing on the visitor\'s device.', 'Sets a first-party cookie so the same visitor is recognised across days, and clicks can be tied back to their visit (needed for affiliate attribution). You may need visitor consent for this. Leave it off and DevDome stores nothing on your visitors\' devices.' ),
 		// Honest claim on purpose: "most, not all" - never advertise a full ad-block bypass.
-		array( 'first_party', 'First-Party Delivery (Ad-Block Resistant)', 'Serves the tracking script from your own domain and relays events through your site server-side, using randomized names unique to your site. Ordinary ad blockers that block third-party analytics domains cannot drop it, so you count visitors they normally hide. Bypasses most, not all, blockers. Works alongside caching and speed plugins without configuration.' ),
+		array( 'first_party', 'First-Party Delivery (Ad-Block Resistant)', 'Serves the tracker from your own domain, so most ad blockers cannot drop it.', 'Serves the tracking script from your own domain and relays events through your site server-side, using randomized names unique to your site. Ordinary ad blockers that block third-party analytics domains cannot drop it, so you count visitors they normally hide. Bypasses most, not all, blockers. Works alongside caching and speed plugins without configuration.' ),
 	);
+
+	/** Info icon with the long explanation in a hover box; the visible hint stays one line. */
+	public static function tip( $text ) {
+		echo '<span class="dd-tip"><span class="dashicons dashicons-info-outline"></span><span class="dd-tip-box">' . esc_html( $text ) . '</span></span>';
+	}
 
 	public function __construct() {
 		add_action( 'admin_menu', array( $this, 'add_menu' ) );
@@ -115,6 +120,11 @@ class DEVDALYT_Admin {
 			.dd-app .dd-footer-inner { display:flex; align-items:center; gap:16px; padding:12px 20px; }
 			.dd-app .dd-footer-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; flex-shrink:0; }
 			.dd-app .dd-hint { display:block; margin-top:6px; font-size:12px; color:#6b7280; }
+			.dd-app .dd-tip { position:relative; display:inline-flex; align-items:center; vertical-align:middle; margin-left:4px; }
+			.dd-app .dd-tip .dashicons { cursor:help; color:#818cf8; font-size:15px; width:15px; height:15px; line-height:15px; }
+			.dd-app .dd-tip:hover .dashicons { color:#4f46e5; }
+			.dd-app .dd-tip-box { pointer-events:none; visibility:hidden; opacity:0; position:absolute; bottom:100%; left:50%; z-index:9999; margin-bottom:.5rem; width:max-content; max-width:280px; transform:translateX(-50%); border-radius:.5rem; border:1px solid #e0e7ff; background:#eef2ff; padding:.625rem; text-align:left; font-size:.75rem; line-height:1.625; font-weight:400; color:#3730a3; box-shadow:0 20px 25px -5px rgba(0,0,0,.1), 0 8px 10px -6px rgba(0,0,0,.1); transition:opacity .15s; }
+			.dd-app .dd-tip:hover .dd-tip-box { visibility:visible; opacity:1; }
 			/* Settings: option lists render vertically, one per row. */
 			.dd-app .da-optlist { display:block; }
 			.dd-app .da-optlist .dd-opt { display:flex; align-items:center; gap:6px; margin:0 0 8px; }
@@ -413,7 +423,7 @@ class DEVDALYT_Admin {
 							$fp_allowed    = ! empty( $switch_values['first_party_allowed'] );
 							$fp_authfail   = ! empty( $switch_values['first_party_auth_failed'] );
 							foreach ( self::SWITCHES as $sw ) :
-								list( $key, $label, $desc ) = $sw;
+								list( $key, $label, $desc, $long ) = $sw;
 								$on     = ! empty( $switch_values[ $key ] );
 								$frozen = ( 'first_party' === $key && ( ! $fp_connected || ! $fp_allowed ) ); ?>
 								<?php
@@ -447,7 +457,7 @@ class DEVDALYT_Admin {
 									<th><?php echo esc_html( $label ); ?></th>
 									<td>
 										<label class="dd-opt"><input type="checkbox" class="dd-check" data-setting="<?php echo esc_attr( $key ); ?>" <?php checked( $on ); ?><?php disabled( $frozen ); ?>> Enable</label>
-										<p class="description"><?php echo esc_html( $desc ); ?></p>
+										<p class="dd-hint"><?php echo esc_html( $desc ); ?> <?php self::tip( $long ); ?></p>
 										<?php if ( 'first_party' === $key && $fp_authfail ) : ?>
 											<p class="description" style="color:#b91c1c;">
 												<?php esc_html_e( 'DevDome rejected this site\'s credentials, so First-Party Delivery was switched off. Disconnect and reconnect the site, then enable it again.', 'devdome-analytics' ); ?>
@@ -469,7 +479,7 @@ class DEVDALYT_Admin {
 									<label class="dd-opt"><input type="checkbox" class="dd-check" data-role="<?php echo esc_attr( $role ); ?>" <?php checked( in_array( $role, $excluded_roles, true ) ); ?>> <?php echo esc_html( translate_user_role( $info['name'] ) ); ?></label>
 								<?php endforeach; ?>
 							</div>
-							<span class="dd-hint">Logged-in users with these roles are never tracked.</span>
+							<p class="dd-hint">Logged-in users with these roles are never tracked. <?php self::tip( 'Visits by users who are logged in with one of the ticked roles are not sent to DevDome at all. Use it for editors and shop staff so internal work never shows up as traffic.' ); ?></p>
 						</div>
 					</section>
 
