@@ -1,0 +1,44 @@
+.devdome-wrap .devdome-card {
+	background: #fff;
+	border: 1px solid #dcdcde;
+	border-radius: 8px;
+	padding: 16px 20px;
+	margin: 16px 0;
+	max-width: 760px;
+}
+.devdome-wrap .devdome-card h2 {
+	margin-top: 0;
+	font-size: 15px;
+}
+.devdome-status {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 14px;
+}
+.devdome-dot {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	display: inline-block;
+	background: #d63638;
+}
+.devdome-dot.on { background: #00a32a; }
+.devdome-meta {
+	border-collapse: collapse;
+	margin: 8px 0 4px;
+}
+.devdome-meta th,
+.devdome-meta td {
+	text-align: left;
+	padding: 4px 18px 4px 0;
+	font-size: 13px;
+	vertical-align: top;
+}
+.devdome-meta th {
+	color: #646970;
+	font-weight: 500;
+	white-space: nowrap;
+}
+.devdome-actions { margin-top: 16px; }
+.devdome-actions .button { margin-right: 8px; }
