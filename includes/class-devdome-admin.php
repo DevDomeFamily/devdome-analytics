@@ -29,7 +29,7 @@ class DEVDALYT_Admin {
 		array( 'dnt', 'Respect Do Not Track', 'Honor the browser "Do Not Track" signal.', 'Browsers that send the Do Not Track signal are not tracked at all. Some privacy laws expect this. The cost is a slightly lower visitor count.' ),
 		// The consent warning is part of the switch, not buried in a doc. Off by default on new
 		// sites: DevDome then writes NOTHING to a visitor's device and needs no cookie banner.
-		array( 'returning',  'Track Returning Visitors', 'Off by default. Stores nothing on the visitor\'s device.', 'Sets a first-party cookie so the same visitor is recognised across days, and clicks can be tied back to their visit (needed for affiliate attribution). You may need visitor consent for this. Leave it off and DevDome stores nothing on your visitors\' devices.' ),
+		array( 'returning',  'Track Returning Visitors', 'Off by default. The page tracker then stores nothing on the visitor\'s device (the outbound-click detector keeps an anonymous random id of its own).', 'Sets a first-party cookie so the same visitor is recognised across days, and clicks can be tied back to their visit (needed for affiliate attribution). You may need visitor consent for this. Leave it off and DevDome stores nothing on your visitors\' devices.' ),
 		// Honest claim on purpose: "most, not all" - never advertise a full ad-block bypass.
 		array( 'first_party', 'First-Party Delivery (Ad-Block Resistant)', 'Serves the tracker from your own domain, so most ad blockers cannot drop it.', 'Serves the tracking script from your own domain and relays events through your site server-side, using randomized names unique to your site. Ordinary ad blockers that block third-party analytics domains cannot drop it, so you count visitors they normally hide. Bypasses most, not all, blockers. Works alongside caching and speed plugins without configuration.' ),
 	);
@@ -66,7 +66,11 @@ class DEVDALYT_Admin {
 			wp_safe_redirect( add_query_arg( 'dd_error', 'start', $clean ) );
 			exit;
 		}
-		set_transient( 'devdalyt_conn_' . $start['request_token'], $start['nonce'], 600 );
+		if ( ! set_transient( 'devdalyt_conn_' . $start['request_token'], $start['nonce'], 20 * MINUTE_IN_SECONDS ) || get_transient( 'devdalyt_conn_' . $start['request_token'] ) !== $start['nonce'] ) {
+			// The return leg cannot be matched without it (review 2026-09-11): say so instead of sending the admin away.
+			wp_safe_redirect( add_query_arg( 'dd_error', 'start', $clean ) );
+			exit;
+		}
 		$account_url = defined( 'DEVDALYT_DEFAULT_ACCOUNT_URL' ) ? DEVDALYT_DEFAULT_ACCOUNT_URL : 'https://devdome.com';
 		// wp_redirect (not wp_safe_redirect): devdome.com is an external, known-fixed host.
 		wp_redirect( $account_url . '/connect/?' . http_build_query( array( 'rt' => $start['request_token'] ) ) ); // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- fixed first-party host, never user input.
@@ -250,6 +254,9 @@ class DEVDALYT_Admin {
 		// button below — the form posts to admin-post.php, which registers the request and
 		// forwards the browser with only an opaque token.
 		$oauth_error = isset( $_GET['dd_error'] ) ? sanitize_text_field( wp_unslash( $_GET['dd_error'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display-only flag set by our own redirect
+		$oauth_why   = isset( $_GET['dd_why'] ) ? sanitize_text_field( wp_unslash( $_GET['dd_why'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display-only detail from our own redirect
+		$oauth_retry = isset( $_GET['dd_retry'] ) ? sanitize_key( wp_unslash( $_GET['dd_retry'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- request token of the kept handshake
+		$oauth_retry_url = '' !== $oauth_retry ? add_query_arg( array( 'page' => 'devdome-analytics', 'dd_connect' => 1, 'rt' => $oauth_retry ), admin_url( 'admin.php' ) ) : '';
 
 		// ?tab= picks the initial active panel (hash + client-side switching take over after load).
 		$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'overview'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display-only tab selector
@@ -330,6 +337,8 @@ class DEVDALYT_Admin {
 									: 'That connect link expired. Please try again.' ) )
 								);
 								?>
+								<?php if ( '' !== $oauth_why ) : ?><br><span style="font-family:ui-monospace,Menlo,monospace;font-size:12px;">Detail: <?php echo esc_html( $oauth_why ); ?></span><?php endif; ?>
+								<?php if ( '' !== $oauth_retry_url ) : ?><br><a href="<?php echo esc_url( $oauth_retry_url ); ?>" style="font-weight:600;">Try again</a><?php endif; ?>
 							</p>
 							<?php endif; ?>
 

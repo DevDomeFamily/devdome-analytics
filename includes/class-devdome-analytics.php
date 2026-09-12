@@ -45,6 +45,12 @@ class DEVDALYT_Analytics {
 	 * plugin), so it keeps the shared-core prefix rather than this plugin's.
 	 */
 	public static function is_connected() {
+		// The owner pressed Disconnect (or the agent did): that stands until a NEW connect clears the
+		// marker (maybe_complete_oauth_connect), even when the account server could not be told and
+		// the shared verify still answers "linked" (review 2026-09-11: tracking resumed by itself).
+		if ( get_option( 'devdalyt_user_disconnected', false ) ) {
+			return false;
+		}
 		// One suite-wide truth: the server-verified connection state the hub renders
 		// (cached; makes no remote call before the user's explicit connect action).
 		// The connected_at timestamp is only the fallback - old-core migrations can
@@ -89,13 +95,16 @@ class DEVDALYT_Analytics {
 			wp_safe_redirect( add_query_arg( 'dd_error', 'expired', $clean ) );
 			exit;
 		}
-		delete_transient( 'devdalyt_conn_' . $rt );
 		// Claim the Account ID server-to-server (site-token authenticated); it never rode the browser.
+		// The correlation transient stays until the claim SUCCEEDS (review 2026-09-11 round 3): a
+		// timeout or refusal used to burn it first, so the retry could only say "expired".
 		$claim = $this->api->connect_claim( $rt, (string) $nonce );
 		if ( empty( $claim['ok'] ) || empty( $claim['account_id'] ) || ! preg_match( '/^DD\d{8}$/', (string) $claim['account_id'] ) ) {
-			wp_safe_redirect( add_query_arg( 'dd_error', 'verify', $clean ) );
+			$why = isset( $claim['message'] ) ? substr( sanitize_text_field( (string) $claim['message'] ), 0, 160 ) : '';
+			wp_safe_redirect( add_query_arg( array( 'dd_error' => 'verify', 'dd_why' => rawurlencode( $why ), 'dd_retry' => $rt ), $clean ) );
 			exit;
 		}
+		delete_transient( 'devdalyt_conn_' . $rt );
 		update_option( 'devdcorev1_account_id', (string) $claim['account_id'] );
 		update_option( 'devdcorev1_connected_at', gmdate( 'c' ) );
 		delete_option( 'devdalyt_user_disconnected' ); // explicit connect clears the stop marker

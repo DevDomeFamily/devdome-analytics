@@ -83,7 +83,7 @@ class DEVDALYT_API {
 			return array( 'ok' => false, 'message' => __( 'This site is not initialised yet.', 'devdome-analytics' ) );
 		}
 		$resp = wp_remote_post( $endpoint, array(
-			'timeout' => 15,
+			'timeout' => 30, // several sequential DB round trips server-side; 15 s abandoned live claims (2026-09-11)
 			'headers' => array( 'Content-Type' => 'application/json' ),
 			'body'    => wp_json_encode( array( 'site_id' => $site_id, 'site_domain' => $site_id, 'site_token' => $token, 'request_token' => (string) $request_token, 'nonce' => (string) $nonce ) ),
 		) );

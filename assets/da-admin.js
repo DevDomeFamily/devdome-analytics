@@ -50,8 +50,9 @@
 		var roles = [];
 		app.querySelectorAll( '[data-role]' ).forEach( function ( cb ) { if ( cb.checked ) { roles.push( cb.getAttribute( 'data-role' ) ); } } );
 		saveBtn.disabled = true;
-		call( 'settings', 'POST', { excluded_roles: roles } ).then( function () {
+		call( 'settings', 'POST', { excluded_roles: roles } ).then( function ( r ) {
 			saveBtn.disabled = false;
+			if ( ! r || ! r.ok || ! r.data || r.data.ok !== true ) { alert( 'The excluded roles could not be saved. Please try again.' ); return; }
 			var n = document.getElementById( 'da-saved-note' );
 			if ( n ) { n.style.display = ''; setTimeout( function () { n.style.display = 'none'; }, 2500 ); }
 		} ).catch( function () { saveBtn.disabled = false; } );
@@ -66,7 +67,7 @@
 			// Not-connected (or failed) answers carry no numbers at all. Leave the tiles on
 			// their "—" placeholders: painting absent values as hard zeros reads as "your
 			// site really had zero visitors", which is a lie.
-			if ( ! ( 'visitors' in d ) ) { return; }
+			if ( ! ( 'visitors' in d ) || null === d.visitors ) { return; } // null = DevDome did not answer: keep the placeholders, never paint zeros
 			setText( 'da-m-visitors',        fmtInt( d.visitors ) );
 			setText( 'da-m-live',            fmtInt( d.live ) );
 			setText( 'da-m-bots',            fmtInt( d.bots ) );
@@ -97,6 +98,8 @@
 			cb.disabled = true;
 			call( 'settings', 'POST', body ).then( function ( r ) {
 				cb.disabled = false;
+				if ( ! r || ! r.ok || ! r.data ) { cb.checked = ! on; alert( 'The setting could not be saved. Please try again.' ); return; }
+				if ( r.data.settings && typeof r.data.settings[ key ] !== 'undefined' && !! r.data.settings[ key ] !== on ) { cb.checked = !! r.data.settings[ key ]; if ( key !== 'first_party' ) { alert( 'The setting did not stick. Please try again.' ); } }
 				// The server may resolve a switch differently than requested (first_party:
 				// entitlement said no / could not be asked / site not connected) — mirror
 				// the stored value so the UI never shows an ON switch that is really off.
@@ -133,11 +136,11 @@
 		// Disconnect: must type DISCONNECT to enable.
 		if ( dDin ) { dDin.addEventListener( 'input', function () { if ( dDyes ) { dDyes.disabled = dDin.value.trim().toUpperCase() !== 'DISCONNECT'; } } ); }
 		if ( dDno ) { dDno.addEventListener( 'click', function () { var dc = document.getElementById( 'da-disc-confirm' ), db = document.getElementById( 'da-disconnect' ), p = document.getElementById( 'da-purge' ); if ( dc ) { dc.style.display = 'none'; } if ( db ) { db.style.display = ''; } if ( p ) { p.checked = false; } if ( dDin ) { dDin.value = ''; } if ( dDyes ) { dDyes.disabled = true; } } ); }
-		if ( dDyes ) { dDyes.addEventListener( 'click', function () { if ( dDin && dDin.value.trim().toUpperCase() !== 'DISCONNECT' ) { return; } var p = document.getElementById( 'da-purge' ); dDyes.disabled = true; call( 'disconnect', 'POST', { purge: !! ( p && p.checked ) } ).then( function () { window.location.reload(); } ).catch( function () { dDyes.disabled = false; } ); } ); }
+		if ( dDyes ) { dDyes.addEventListener( 'click', function () { if ( dDin && dDin.value.trim().toUpperCase() !== 'DISCONNECT' ) { return; } var p = document.getElementById( 'da-purge' ); dDyes.disabled = true; call( 'disconnect', 'POST', { purge: !! ( p && p.checked ) } ).then( function ( r ) { if ( ! r || ! r.ok || ! r.data || r.data.ok !== true ) { throw new Error( 'disconnect failed' ); } if ( r.data.remote_unlinked === false ) { alert( 'Disconnected on this site, but the DevDome account server could not be told; the account may still list this site. Remove it at devdome.com or reconnect and disconnect again.' ); } if ( p && p.checked && r.data.purged === false ) { alert( 'The collected data could not be deleted on DevDome. Use Reset analytics after reconnecting, or contact support.' ); } window.location.reload(); } ).catch( function () { dDyes.disabled = false; alert( 'Disconnect failed. Please try again.' ); } ); } ); }
 		// Reset: must type RESET to enable. Purges data, stays connected.
 		var rBtn = document.getElementById( 'da-reset' ), rNo = document.getElementById( 'da-reset-no' ), rYes = document.getElementById( 'da-reset-yes' ), rIn = document.getElementById( 'da-reset-input' );
 		if ( rBtn ) { rBtn.addEventListener( 'click', function () { var rc = document.getElementById( 'da-reset-confirm' ); if ( rc ) { rc.style.display = 'block'; rBtn.style.display = 'none'; } if ( rIn ) { rIn.value = ''; setTimeout( function () { rIn.focus(); }, 0 ); } if ( rYes ) { rYes.disabled = true; } } ); }
 		if ( rIn ) { rIn.addEventListener( 'input', function () { if ( rYes ) { rYes.disabled = rIn.value.trim().toUpperCase() !== 'RESET'; } } ); }
 		if ( rNo ) { rNo.addEventListener( 'click', function () { var rc = document.getElementById( 'da-reset-confirm' ); if ( rc ) { rc.style.display = 'none'; } if ( rBtn ) { rBtn.style.display = ''; } if ( rIn ) { rIn.value = ''; } if ( rYes ) { rYes.disabled = true; } } ); }
-		if ( rYes ) { rYes.addEventListener( 'click', function () { if ( rIn && rIn.value.trim().toUpperCase() !== 'RESET' ) { return; } rYes.disabled = true; call( 'reset', 'POST' ).then( function () { window.location.reload(); } ).catch( function () { rYes.disabled = false; } ); } ); }
+		if ( rYes ) { rYes.addEventListener( 'click', function () { if ( rIn && rIn.value.trim().toUpperCase() !== 'RESET' ) { return; } rYes.disabled = true; call( 'reset', 'POST' ).then( function ( r ) { if ( ! r || ! r.ok || ! r.data || r.data.ok !== true ) { throw new Error( 'reset failed' ); } window.location.reload(); } ).catch( function () { rYes.disabled = false; alert( 'DevDome did not confirm the deletion; the collected data is still there. Try again in a minute.' ); } ); } ); }
 	} )();

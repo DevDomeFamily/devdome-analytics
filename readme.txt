@@ -4,7 +4,7 @@ Tags: analytics, traffic analytics, bot traffic, ai referrals, click tracking
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.0.7
+Stable tag: 1.0.8
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,10 @@ A free DevDome account is required because analytics events are processed and re
 
 Nothing is tracked or sent until the site is connected.
 
+= AI and Agent Support =
+
+On WordPress 6.9 and newer, DevDome Analytics registers WordPress Abilities covering the plugin: connection status, the traffic numbers of the last 1, 7 or 30 days (the same the dashboard shows), every tracking setting (read and update), the connection test, the one-click connect link, disconnect and data reset. Compatible AI agents and MCP clients can discover and use these abilities when the site exposes them, for example through the official WordPress MCP Adapter. Every ability runs the same code as the plugin screen under the same administrator capability; disconnect and data reset require an explicit confirmation and are annotated destructive; agent output never carries e-mail addresses or the site token. Nothing is sent to DevDome for an unconnected site.
+
 == External services ==
 
 **Plugin catalog (`devdome.com`).** The DevDome Dashboard inside wp-admin fetches the list of DevDome plugins (names, descriptions, logos, links, WordPress.org slugs) from `https://devdome.com/wp-plugins/catalog.json` at most once every 12 hours, so the list stays current. Only the bundled core version is sent in the request; no site or visitor data. Service provider: DevDome. Terms: https://devdome.com/terms-of-service Privacy policy: https://devdome.com/privacy-policy
@@ -134,7 +138,7 @@ The bundled shared library also references endpoints this build never calls: the
 = Never sent, in any request =
 
 * Passwords and password hashes.
-* Form field values submitted by visitors.
+* Form field values submitted by visitors. The one exception is the text typed into the site's own search box, recorded as the site-search term of that visit (only while tracking and click tracking are on).
 * Post, page, comment or any other WordPress content.
 * User accounts, user lists, or the email addresses of your registered users. The one exception is the site's administration email address, which is sent once during the connection handshake described above.
 * Customer, order or payment data.
@@ -163,7 +167,7 @@ The bundled shared library also references endpoints this build never calls: the
 
 1. Install and activate the plugin from **Plugins > Add New**.
 2. Open **DevDome > Analytics**.
-3. Select **Connect Via DevDome Account**, or enter your DevDome Account ID manually.
+3. Select **Connect Via DevDome Account** and approve the link on devdome.com.
 4. Review the Settings tab and enable only the tracking features you want.
 
 == Frequently Asked Questions ==
@@ -237,6 +241,12 @@ Those two build inputs are not included in the distributed package. Ask for them
 7. Devices report: desktop, mobile and tablet with pageviews, visitors, clicks, countries, browsers, OS, top pages and referrers.
 
 == Changelog ==
+
+= 1.0.8 =
+* WordPress Abilities API (WordPress 6.9 and newer): 8 abilities for AI agents and MCP clients through the official WordPress MCP Adapter: get-status, get-stats (1, 7 or 30 days), get-settings, test-connection, update-settings (read back before reported), start-connect (returns the approve link), disconnect and reset-data (both require confirm: true and are annotated destructive). Every write goes through the same handler as the screen. Agent output never carries e-mail addresses or the site token.
+* Disconnect now checks the account server's answer and says when the site could not be unlinked remotely.
+* Security review fixes: a disconnect stays a disconnect even when the account server could not be told (no silent re-link); the master tracking switch and the Do Not Track signal are enforced at every sending point, including beacons from pages cached earlier and bot reporting; the click switches are honoured by the first-party tracker copy; settings saves report what was actually stored; an agent must confirm before a change that collects more visitor data; the generated first-party script is never written or deleted through a symbolic link; the relay credential is removed on uninstall; the site-search term disclosure was added to the readme.
+* The stats endpoint accepts 1 to 365 days only; agent error messages pass through the same redaction as results; the install notes no longer mention a manual Account ID step.
 
 = 1.0.7 =
 * Settings: every switch now shows a one line hint with an info icon holding the full explanation of what is sent and what turning it off changes, the same layout as DevDome Malware Scanner.

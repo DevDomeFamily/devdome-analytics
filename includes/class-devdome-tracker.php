@@ -42,6 +42,20 @@ class DEVDALYT_Tracker {
 			status_header( 204 );
 			exit;
 		}
+		// Master switch off: beacons from pages cached while it was on are dropped here, the one
+		// place every sender passes (review 2026-09-11). Same for a visitor's Do Not Track signal:
+		// the cached page cannot know it, this request does.
+		if ( ! get_option( 'devdalyt_tracking_enabled', true ) ) {
+			nocache_headers();
+			status_header( 204 );
+			exit;
+		}
+		if ( '1' === ( isset( $_SERVER['HTTP_DNT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_DNT'] ) ) : '' )
+			&& (bool) get_option( 'devdalyt_respect_dnt', true ) ) {
+			nocache_headers();
+			status_header( 204 );
+			exit;
+		}
 		// The endpoint path is printed in every page's source, so it is public knowledge —
 		// require the browser-stamped same-site Origin/Referer a real page beacon always
 		// carries, or this relay is an open forwarder anyone can script against the ingest.
@@ -58,6 +72,12 @@ class DEVDALYT_Tracker {
 		// Excluded-role users never contribute events — drop their beacons too (covers pages
 		// cached before the exclusion was saved, which still carry the tracker snippet).
 		if ( $this->user_is_excluded() ) {
+			status_header( 204 );
+			exit;
+		}
+		// The switches are enforced HERE too (review 2026-09-11 round 2): cached HTML keeps the old
+		// tag and keeps posting after the admin turned outbound-click tracking off.
+		if ( ! get_option( 'devdalyt_tracking_enabled', true ) || ! get_option( 'devdalyt_outbound_tracking_enabled', true ) ) {
 			status_header( 204 );
 			exit;
 		}
@@ -507,13 +527,36 @@ class DEVDALYT_Tracker {
 		$up  = wp_get_upload_dir();
 		$dir = trailingslashit( $up['basedir'] ) . $p['dir'];
 		$dst = trailingslashit( $dir ) . $p['file'];
+		// Never write through a link (review 2026-09-11): a linked folder or file at the random name
+		// would let the copy land outside uploads. Degrade to the CDN tag instead.
+		if ( is_link( $up['basedir'] ) || is_link( $dir ) || is_link( $dst ) ) {
+			return self::fp_script_url() !== '';
+		}
 		if ( $wp_filesystem->exists( $dst ) && md5( (string) $wp_filesystem->get_contents( $dst ) ) === md5( $js ) ) {
 			return true; // already current — don't touch the file's mtime for nothing
 		}
 		if ( ! wp_mkdir_p( $dir ) ) {
 			return false;
 		}
-		return (bool) $wp_filesystem->put_contents( $dst, $js, FS_CHMOD_FILE );
+		// Canonical containment (review 2026-09-11 round 2): whatever links sit above uploads, the
+		// resolved destination must still be inside the resolved uploads folder.
+		$real_dir  = realpath( $dir );
+		$real_base = realpath( $up['basedir'] );
+		if ( ! $real_dir || ! $real_base || 0 !== strpos( trailingslashit( $real_dir ), trailingslashit( $real_base ) ) ) {
+			return self::fp_script_url() !== '';
+		}
+		// Atomic swap: write a sibling temp file, verify its bytes, then move it over the live copy.
+		// A partial write used to replace a working script with a truncated one that
+		// fp_script_url() then served because "it exists".
+		$tmp = $dst . '.' . substr( md5( uniqid( '', true ) ), 0, 8 ) . '.tmp';
+		if ( ! $wp_filesystem->put_contents( $tmp, $js, FS_CHMOD_FILE ) ) {
+			return $wp_filesystem->exists( $dst );
+		}
+		if ( md5( (string) $wp_filesystem->get_contents( $tmp ) ) !== md5( $js ) || ! $wp_filesystem->move( $tmp, $dst, true ) ) {
+			$wp_filesystem->delete( $tmp );
+			return $wp_filesystem->exists( $dst );
+		}
+		return true;
 	}
 
 	/** URL of the local static script copy, or '' when it does not exist (degrade to CDN). */
@@ -549,7 +592,7 @@ class DEVDALYT_Tracker {
 	 */
 	private function relay_tracker_event() {
 		$method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : '';
-		if ( 'POST' !== $method || ! get_option( 'devdalyt_first_party', false ) || ! self::is_connected_cheap() || $this->user_is_excluded() ) {
+		if ( 'POST' !== $method || ! get_option( 'devdalyt_first_party', false ) || ! get_option( 'devdalyt_tracking_enabled', true ) || ! self::is_connected_cheap() || $this->user_is_excluded() ) {
 			nocache_headers();
 			status_header( 204 );
 			exit;
@@ -593,6 +636,18 @@ class DEVDALYT_Tracker {
 			exit;
 		}
 		$data = $this->build_fp_payload( json_decode( $body, true ) );
+		// Event-specific switches (review 2026-09-11 round 2): pages cached before a switch was turned
+		// off still carry the old tag. Not an enumeration of types (the ingest owns that list), just
+		// the two families the switches name: outbound clicks and the other clicks.
+		if ( null !== $data ) {
+			$t        = (string) $data['event_type'];
+			$is_out   = false !== strpos( $t, 'outbound' );
+			$is_click = false !== strpos( $t, 'click' );
+			if ( ( $is_out && ! get_option( 'devdalyt_outbound_tracking_enabled', true ) )
+				|| ( $is_click && ! $is_out && ! get_option( 'devdalyt_click_tracking_enabled', true ) ) ) {
+				$data = null;
+			}
+		}
 		if ( null !== $data ) {
 			$headers = array( 'Content-Type' => 'text/plain;charset=UTF-8' );
 			$relay   = (string) get_option( 'devdalyt_relay_secret', '' );
@@ -785,13 +840,15 @@ class DEVDALYT_Tracker {
 		// run time, so track.js cannot read its own data-* attributes. __DDCFG is the reliable
 		// source; the attributes stay for the dashboard ownership check and older track.js.
 		$cfg_js = sprintf(
-			'window.__DDCFG={site:%s,siteId:%s,account:%s,endpoint:%s,respectDnt:%s,cookieless:%s,fp:%s};',
+			'window.__DDCFG={site:%s,siteId:%s,account:%s,endpoint:%s,respectDnt:%s,cookieless:%s,clicks:%s,outbound:%s,fp:%s};',
 			wp_json_encode( $site_id, $js_esc ),
 			wp_json_encode( $site_id, $js_esc ),
 			wp_json_encode( $account_id, $js_esc ),
 			wp_json_encode( $api_endpoint, $js_esc ),
 			$dnt,        // 'true' | 'false' literal - track.js honors navigator.doNotTrack when true
 			$cookieless, // 'true' | 'false' literal - track.js writes nothing to the device when true
+			$clicks,     // 'true' | 'false' literal - track.js sends no click events when false (review 2026-09-11)
+			$outbound,   // 'true' | 'false' literal - track.js sends no outbound/ad click events when false
 			wp_json_encode( $fp_endpoint, $js_esc )
 		);
 		wp_add_inline_script( 'devdalyt-tracker', $cfg_js, 'before' );
@@ -801,7 +858,7 @@ class DEVDALYT_Tracker {
 		// is the entire point of it: clicks stay counted when track.js never loads.
 		$dnt_on = ( 'true' === $dnt && '1' === ( isset( $_SERVER['HTTP_DNT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_DNT'] ) ) : '' ) );
 		if ( 'true' === $outbound && ! $dnt_on ) {
-			wp_add_inline_script( 'devdalyt-tracker', $this->click_detector_js( $fp_endpoint, $site_id, $account_id ), 'after' );
+			wp_add_inline_script( 'devdalyt-tracker', $this->click_detector_js( $fp_endpoint, $site_id, $account_id, 'true' === $dnt ), 'after' );
 		}
 
 		// data-account also lets the DevDome dashboard verify ownership by reading the live page.
@@ -836,17 +893,18 @@ class DEVDALYT_Tracker {
 
 	/** The inline, unblockable outbound-click detector. Self-contained (no external file), beacons
 	 *  same-origin to /dd-e. Counts a click the moment a visitor navigates to an external domain. */
-	private function click_detector_js( $fp, $site_id, $account_id = '' ) {
+	private function click_detector_js( $fp, $site_id, $account_id = '', $respect_dnt = true ) {
 		// Same <script>-context escaping as inject(): JSON_HEX_* keeps <, >, &, ' and " out of the
 		// literal so no stored value can close the tag. JS decodes the escapes to the same string.
 		$cfg = wp_json_encode(
-			array( 'fp' => (string) $fp, 's' => (string) $site_id, 'ac' => (string) $account_id ),
+			array( 'fp' => (string) $fp, 's' => (string) $site_id, 'ac' => (string) $account_id, 'dnt' => (bool) $respect_dnt ),
 			JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
 		);
 		$js = <<<'DDJS'
 (function(){try{
 var C=__DDCFG_JSON__,FP=C.fp,S=C.s;
 if(window.__ddClick)return;window.__ddClick=1;
+if(C.dnt&&(navigator.doNotTrack==='1'||window.doNotTrack==='1'||navigator.msDoNotTrack==='1'))return;
 function gid(k,st){try{var v=st.getItem(k);if(!v){v=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));st.setItem(k,v);}return v;}catch(e){return''+Math.random();}}
 var ua=navigator.userAgent||'';
 var os=/Windows/.test(ua)?'windows':/Mac OS/.test(ua)?'macos':/Android/.test(ua)?'android':/iPhone|iPad|iPod/.test(ua)?'ios':/Linux/.test(ua)?'linux':'other';

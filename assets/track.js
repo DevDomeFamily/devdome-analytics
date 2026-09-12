@@ -27,6 +27,10 @@
   // (beacons same-origin → ad-blockers/privacy browsers can't drop it). That owns outbound clicks, so
   // track.js must NOT also fire them here (double count). track.js still does pageviews/engagement.
   var FP_CLICKS = !!(CFG.fp);
+  // The site's click switches (review 2026-09-11): the connector prints them in __DDCFG; manually
+  // pasted tags may carry data-click-tracking / data-outbound-tracking. Default on.
+  var CLICKS   = (CFG.clicks !== undefined) ? !!CFG.clicks : !(SCRIPT && SCRIPT.getAttribute("data-click-tracking") === "false");
+  var OUTBOUND = (CFG.outbound !== undefined) ? !!CFG.outbound : !(SCRIPT && SCRIPT.getAttribute("data-outbound-tracking") === "false");
 
   // Honor "Do Not Track" when the site enabled the switch — bail before any identity or beacon.
   var RESPECT_DNT = (CFG.respectDnt !== undefined) ? !!CFG.respectDnt
@@ -409,7 +413,7 @@
     var f = e.target;
     if (!f || !f.querySelector) return;
     var inp = f.querySelector('input[type="search"], input[name="q"], input[name="query"]');
-    if (inp && inp.value) send("search", { query: String(inp.value).slice(0, 200) });
+    if (CLICKS && inp && inp.value) send("search", { query: String(inp.value).slice(0, 200) });
   }, true);
 
   // Transit/redirect cloaking slug: /go//i//p//r//check//price//amazon/<ASIN>. These 302 the visitor
@@ -477,11 +481,11 @@
       // inflated Clicks/CTR with non-buy exits (2026-07-21); they are no longer recorded.
       // amazon_button_click dropped too: it double-rowed every direct Amazon click for no reader.
       // Skip when the connector's inline first-party detector owns clicks (FP_CLICKS) — no double count.
-      if (!FP_CLICKS) {
+      if (!FP_CLICKS && OUTBOUND) {
         send("amazon_outbound_click", { asin: asin, target_url: url, via: "click" }, true);
       }
     } else if (!outbound) {
-      send("internal_click", { target_url: url, via: "click" });
+      if (CLICKS) send("internal_click", { target_url: url, via: "click" });
     }
   }, true);
 
@@ -513,7 +517,7 @@
       var now = Date.now(); if (now - _lastAd < 1000) return; _lastAd = now;
       var src = el.getAttribute("src") || el.src || "", host = "ad";
       try { host = new URL(src, location.href).host || "ad"; } catch (_) {}
-      send("ad_click", { target_url: host, via: "ad" }, true);
+      if (CLICKS) send("ad_click", { target_url: host, via: "ad" }, true);
     }, 0);
   });
 

@@ -20,10 +20,16 @@ $devdalyt_fp = get_option( 'devdalyt_fp_paths', null );
 if ( is_array( $devdalyt_fp ) && ! empty( $devdalyt_fp['dir'] ) && preg_match( '/^[a-f0-9]{10}$/', (string) $devdalyt_fp['dir'] ) ) {
 	$devdalyt_up  = wp_get_upload_dir();
 	$devdalyt_dir = trailingslashit( $devdalyt_up['basedir'] ) . $devdalyt_fp['dir'];
-	if ( ! empty( $devdalyt_fp['file'] ) && preg_match( '/^[a-f0-9]{8}\.js$/', (string) $devdalyt_fp['file'] ) ) {
-		wp_delete_file( trailingslashit( $devdalyt_dir ) . $devdalyt_fp['file'] );
+	$devdalyt_file = ! empty( $devdalyt_fp['file'] ) && preg_match( '/^[a-f0-9]{8}\.js$/', (string) $devdalyt_fp['file'] ) ? trailingslashit( $devdalyt_dir ) . $devdalyt_fp['file'] : '';
+	// never through a link (review 2026-09-11): a linked folder or file would delete outside uploads;
+	// and the RESOLVED folder must still sit inside the resolved uploads folder (linked ancestors).
+	$devdalyt_real = realpath( $devdalyt_dir );
+	$devdalyt_base = realpath( $devdalyt_up['basedir'] );
+	$devdalyt_inside = $devdalyt_real && $devdalyt_base && 0 === strpos( trailingslashit( $devdalyt_real ), trailingslashit( $devdalyt_base ) );
+	if ( $devdalyt_inside && '' !== $devdalyt_file && ! is_link( $devdalyt_dir ) && ! is_link( $devdalyt_file ) && is_file( $devdalyt_file ) ) {
+		wp_delete_file( $devdalyt_file );
 	}
-	if ( is_dir( $devdalyt_dir ) ) {
+	if ( $devdalyt_inside && is_dir( $devdalyt_dir ) && ! is_link( $devdalyt_dir ) ) {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- removing the plugin's own empty random dir at uninstall
 		@rmdir( $devdalyt_dir );
 	}
@@ -60,6 +66,7 @@ delete_option( 'devdalyt_user_disconnected' );
 delete_option( 'devdalyt_remote_disconnected' );
 delete_option( 'devdalyt_fp_paths' );
 delete_option( 'devdalyt_delete_data_on_uninstall' );
+delete_option( 'devdalyt_relay_secret' ); // the fleet relay credential this plugin copied (review 2026-09-11)
 
 // This plugin's transients use dynamic keys (per-request-token connect handles, per-IP
 // beacon rate buckets, the update-metadata cache), so they can't be listed one by one —

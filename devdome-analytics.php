@@ -3,7 +3,7 @@
  * Plugin Name: DevDome Analytics
  * Plugin URI: https://devdome.com/features/analytics
  * Description: Traffic analytics, visitor statistics and click tracking for WordPress, with AI referral detection and bot-filtered numbers.
- * Version: 1.0.7
+ * Version: 1.0.8
  * Author: DevDome
  * Author URI: https://devdome.com
  * License: GPLv2 or later
@@ -30,7 +30,7 @@ if ( file_exists( __DIR__ . '/wporg-build.php' ) ) {
 	require __DIR__ . '/wporg-build.php';
 }
 
-define( 'DEVDALYT_VERSION', '1.0.7' );
+define( 'DEVDALYT_VERSION', '1.0.8' );
 define( 'DEVDALYT_FILE', __FILE__ );
 define( 'DEVDALYT_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DEVDALYT_URL', plugin_dir_url( __FILE__ ) );
@@ -56,6 +56,7 @@ if ( file_exists( DEVDALYT_DIR . 'includes/migrate.php' ) ) {
 }
 
 require_once DEVDALYT_DIR . 'includes/class-devdome-analytics.php';
+require_once DEVDALYT_DIR . 'includes/abilities.php'; // WordPress Abilities API (6.9+): registers nothing on older versions
 
 // Self-hosted update feed (api.devdome.com). The plugin checks this JSON and WP shows
 // "Update available" when it advertises a newer version — no manual re-upload. The wp.org

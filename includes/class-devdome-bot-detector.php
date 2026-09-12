@@ -45,6 +45,10 @@ class DEVDALYT_Bot_Detector {
 		if ( ! DEVDALYT_Analytics::is_connected() ) {
 			return;
 		}
+		// The master switch stops EVERY sender, not only the page tag (review 2026-09-11).
+		if ( ! get_option( 'devdalyt_tracking_enabled', true ) ) {
+			return;
+		}
 		if ( ! get_option( 'devdalyt_bot_tracking_enabled', true ) ) {
 			return;
 		}
@@ -54,6 +58,22 @@ class DEVDALYT_Bot_Detector {
 		}
 		if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
 			return;
+		}
+		// The same privacy controls as the page tag (review 2026-09-11 round 3): a Do Not Track
+		// request, a logged-in administrator under "do not track admins", or an excluded role
+		// must not be reported as a bot visit either.
+		if ( '1' === ( isset( $_SERVER['HTTP_DNT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_DNT'] ) ) : '' )
+			&& (bool) get_option( 'devdalyt_respect_dnt', true ) ) {
+			return;
+		}
+		if ( is_user_logged_in() ) {
+			if ( get_option( 'devdalyt_dnt_admins', true ) && current_user_can( 'manage_options' ) ) {
+				return;
+			}
+			$excluded = (array) get_option( 'devdalyt_excluded_roles', array() );
+			if ( $excluded && array_intersect( (array) wp_get_current_user()->roles, $excluded ) ) {
+				return;
+			}
 		}
 
 		$ua = isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '';
