@@ -3,7 +3,7 @@
  * Plugin Name: DevDome Analytics
  * Plugin URI: https://devdome.com/features/analytics
  * Description: Traffic analytics, visitor statistics and click tracking for WordPress, with AI referral detection and bot-filtered numbers.
- * Version: 1.0.8
+ * Version: 1.1.0
  * Author: DevDome
  * Author URI: https://devdome.com
  * License: GPLv2 or later
@@ -30,7 +30,7 @@ if ( file_exists( __DIR__ . '/wporg-build.php' ) ) {
 	require __DIR__ . '/wporg-build.php';
 }
 
-define( 'DEVDALYT_VERSION', '1.0.8' );
+define( 'DEVDALYT_VERSION', '1.1.0' );
 define( 'DEVDALYT_FILE', __FILE__ );
 define( 'DEVDALYT_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DEVDALYT_URL', plugin_dir_url( __FILE__ ) );
@@ -55,7 +55,34 @@ if ( file_exists( DEVDALYT_DIR . 'includes/migrate.php' ) ) {
 	require_once DEVDALYT_DIR . 'includes/migrate.php';
 }
 
+require_once DEVDALYT_DIR . 'includes/db-guard.php'; // DESIGN.md 24 / 24.5: failed-query guard + proved option writes
 require_once DEVDALYT_DIR . 'includes/class-devdome-analytics.php';
+
+// Request-wide database guard (DESIGN.md 24): every failed query is recorded before wpdb::query() clears it.
+add_filter( 'query', 'devdalyt_db_guard_record', 1 );
+
+// "Report this error" (core 1.7.0): the plugin keeps no log, so a report about it carries the connection
+// state instead (flags and timestamps only), and every secret this site holds is masked before it leaves.
+add_filter( 'devdcorev1_error_report_log', function ( $lines, $plugin ) {
+	if ( 'devdome-analytics' !== $plugin ) {
+		return $lines;
+	}
+	$ent = get_transient( 'devdalyt_fp_entitlement' );
+	return array(
+		'connected=' . ( class_exists( 'DEVDALYT_Analytics' ) && DEVDALYT_Analytics::is_connected_cached() ? '1' : '0' ),
+		'connected_at=' . (string) get_option( 'devdcorev1_connected_at', '' ),
+		'site_id=' . (string) get_option( 'devdcorev1_site_id', '' ),
+		'has_token=' . ( '' !== (string) get_option( 'devdcorev1_site_token', '' ) ? '1' : '0' ),
+		'user_disconnected=' . ( get_option( 'devdalyt_user_disconnected', false ) ? '1' : '0' ),
+		'remote_disconnected=' . ( get_option( 'devdalyt_remote_disconnected', false ) ? '1' : '0' ),
+		'first_party=' . ( get_option( 'devdalyt_first_party', false ) ? '1' : '0' ),
+		'fp_entitlement=' . ( is_array( $ent ) ? wp_json_encode( $ent ) : 'none' ),
+		'permalinks=' . ( '' !== (string) get_option( 'permalink_structure', '' ) ? 'pretty' : 'plain' ),
+	);
+}, 10, 2 );
+add_filter( 'devdcorev1_error_report_redact', function ( $text, $plugin ) {
+	return 'devdome-analytics' === $plugin ? devdalyt_redact( $text ) : $text;
+}, 10, 2 );
 require_once DEVDALYT_DIR . 'includes/abilities.php'; // WordPress Abilities API (6.9+): registers nothing on older versions
 
 // Self-hosted update feed (api.devdome.com). The plugin checks this JSON and WP shows
@@ -87,11 +114,31 @@ function devdalyt_stitch_redirect( $location, $status ) {
 	if ( false !== strpos( $location, '_dd=' ) ) { return $location; }          // already tagged
 	if ( is_admin() || wp_doing_cron() || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) ) { return $location; }
 	if ( empty( $_SERVER['REQUEST_METHOD'] ) || 'GET' !== strtoupper( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) ) { return $location; }
-	if ( ! DEVDALYT_Analytics::is_connected() ) { return $location; }               // unconnected sites never tag redirects
+	if ( ! DEVDALYT_Tracker::is_connected_cheap() ) { return $location; }               // unconnected sites never tag redirects
 	if ( ! (bool) get_option( 'devdalyt_tracking_enabled', true ) ) { return $location; }
+	// The same opt-outs as the page tracker (DeepSeek round 5): a Do Not Track / Global Privacy Control visitor, a
+	// logged-in administrator under "Do not track admins" and a user in an excluded role never get a tagged URL
+	// (the tracker would not run on the landing page, so the tag would sit in the address bar for nothing).
+	if ( get_option( 'devdalyt_respect_dnt', true )
+		&& ( ( isset( $_SERVER['HTTP_DNT'] ) && '1' === (string) $_SERVER['HTTP_DNT'] ) || ( isset( $_SERVER['HTTP_SEC_GPC'] ) && '1' === (string) $_SERVER['HTTP_SEC_GPC'] ) ) ) { // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- compared to a literal
+		return $location;
+	}
+	if ( is_user_logged_in() ) {
+		if ( get_option( 'devdalyt_dnt_admins', true ) && current_user_can( 'manage_options' ) ) { return $location; }
+		$excluded = (array) get_option( 'devdalyt_excluded_roles', array() );
+		if ( $excluded && array_intersect( (array) wp_get_current_user()->roles, $excluded ) ) { return $location; }
+	}
 	$ua = isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '';
 	// SEO-safe: never tag a crawler's redirect (would pollute the index with ?_dd= URLs).
 	if ( '' === $ua || ( function_exists( 'devdcorev1_ua_is_bot' ) && devdcorev1_ua_is_bot( $ua ) ) ) { return $location; }
+	// The shared feeds are permanently off in the WordPress.org build (Codex round 7): the plugin's own crawler map
+	// plus the generic crawler words decide too, so Googlebot never indexes a ?_dd= URL.
+	if ( class_exists( 'DEVDALYT_Bot_Detector' ) ) {
+		foreach ( DEVDALYT_Bot_Detector::BOTS as $bot_name => $bot_type ) {
+			if ( false !== stripos( $ua, $bot_name ) ) { return $location; }
+		}
+	}
+	if ( preg_match( '/bot|crawl|spider|slurp|preview|fetch|headless|lighthouse|monitor|python-requests|curl\//i', $ua ) ) { return $location; }
 	// Same-site landings only (the tracker runs there). A relative location (no host) is same-site.
 	$home = strtolower( (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
 	$dest = strtolower( (string) wp_parse_url( $location, PHP_URL_HOST ) );
@@ -101,12 +148,23 @@ function devdalyt_stitch_redirect( $location, $status ) {
 	// allowlist removes control bytes and anything a URI cannot legally contain, and the value is
 	// rawurlencode()d before it reaches the redirect URL below.
 	// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitized by the printable-ASCII allowlist on this line (see comment above); recognized sanitizers corrupt %XX escapes in the recorded path.
-	$from = isset( $_SERVER['REQUEST_URI'] ) ? preg_replace( '/[^\x21-\x7E]/', '', (string) wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
+	$from = isset( $_SERVER['REQUEST_URI'] ) ? preg_replace( '/[\x00-\x20\x7F]/', '', (string) wp_unslash( $_SERVER['REQUEST_URI'] ) ) : ''; // control bytes and spaces only: UTF-8 slugs stay (DeepSeek round 4), rawurlencoded below
+	if ( '' === $from ) { return $location; }
+	// Path only (DeepSeek round 7): the query string of the redirecting URL can hold a password-reset token, a
+	// magic link or a nonce, and track.js would post it on as transit_from. The hop is the path.
+	$from = (string) strtok( $from, '?' );
 	if ( '' === $from ) { return $location; }
 	$from = preg_replace( '/[?&]_dd=[^&]*/', '', $from );
 	$dd   = rawurlencode( ( $status ? (string) $status : '302' ) . ':' . $from );
+	// The fragment stays a fragment (DeepSeek round 5): the parameter goes before "#", never inside it.
+	$frag = '';
+	$hash = strpos( $location, '#' );
+	if ( false !== $hash ) {
+		$frag     = substr( $location, $hash );
+		$location = substr( $location, 0, $hash );
+	}
 	$sep  = ( false === strpos( $location, '?' ) ) ? '?' : '&';
-	return $location . $sep . '_dd=' . $dd;
+	return $location . $sep . '_dd=' . $dd . $frag;
 }
 
 /**
@@ -160,7 +218,7 @@ function devdalyt_seed_options() {
 	if ( null === get_option( 'devdalyt_stats_endpoint', null ) )            { add_option( 'devdalyt_stats_endpoint', DEVDALYT_DEFAULT_STATS_ENDPOINT ); }
 	if ( null === get_option( 'devdalyt_script_url', null ) )                { add_option( 'devdalyt_script_url', DEVDALYT_DEFAULT_SCRIPT_URL ); }
 	if ( null === get_option( 'devdalyt_dashboard_url', null ) )             { add_option( 'devdalyt_dashboard_url', DEVDALYT_DEFAULT_DASHBOARD_URL ); }
-	if ( null === get_option( 'devdalyt_plugin_version', null ) )            { add_option( 'devdalyt_plugin_version', DEVDALYT_VERSION ); }
+	// devdalyt_plugin_version is NOT seeded here: it is written LAST by activation / the upgrade path, only when every default landed (Codex round 2).
 	if ( null === get_option( 'devdalyt_last_connection_test', null ) )      { add_option( 'devdalyt_last_connection_test', '' ); }
 	if ( null === get_option( 'devdalyt_last_event_sent_at', null ) )        { add_option( 'devdalyt_last_event_sent_at', '' ); }
 	if ( null === get_option( 'devdalyt_delete_data_on_uninstall', null ) )  { add_option( 'devdalyt_delete_data_on_uninstall', false ); }
@@ -169,17 +227,86 @@ function devdalyt_seed_options() {
 
 // Upgrade path: when the stored version lags, seed any options added in newer versions (activation
 // doesn't re-run on plugin updates) so new switches have real rows and can be toggled off.
+/** The DevDome-managed service URLs, proved (DESIGN.md 24.5). @return bool every one landed. */
+function devdalyt_sync_service_urls() {
+	$ok = devdalyt_option_write( 'devdalyt_api_endpoint', DEVDALYT_DEFAULT_API_ENDPOINT );
+	$ok = devdalyt_option_write( 'devdalyt_status_endpoint', DEVDALYT_DEFAULT_STATUS_ENDPOINT ) && $ok;
+	$ok = devdalyt_option_write( 'devdalyt_stats_endpoint', DEVDALYT_DEFAULT_STATS_ENDPOINT ) && $ok;
+	$ok = devdalyt_option_write( 'devdalyt_script_url', DEVDALYT_DEFAULT_SCRIPT_URL ) && $ok;
+	return devdalyt_option_write( 'devdalyt_dashboard_url', DEVDALYT_DEFAULT_DASHBOARD_URL ) && $ok;
+}
+
+/**
+ * True when every seeded default has a row AND the identity holds real values (Codex round 3): the seed writes placeholder
+ * rows ('' token) first, so "a row exists" is not "the intended value landed". The identity is read through get_option():
+ * on a subdirectory multisite core 1.7.0 routes those two rows to the main site, where a raw row read of this blog finds nothing.
+ */
+function devdalyt_seed_landed() {
+	foreach ( array( 'devdalyt_tracking_enabled', 'devdalyt_click_tracking_enabled', 'devdalyt_outbound_tracking_enabled', 'devdalyt_ai_tracking_enabled', 'devdalyt_bot_tracking_enabled', 'devdalyt_dnt_admins', 'devdalyt_respect_dnt', 'devdalyt_excluded_roles', 'devdalyt_debug_mode', 'devdalyt_returning_visitors', 'devdalyt_first_party', 'devdalyt_delete_data_on_uninstall', 'devdalyt_last_connection_test', 'devdalyt_last_event_sent_at' ) as $k ) {
+		$row = devdalyt_option_row( $k );
+		if ( ! is_array( $row ) || ! $row[0] ) {
+			return false;
+		}
+	}
+	if ( '' === (string) get_option( 'devdcorev1_site_id', '' ) || strlen( (string) get_option( 'devdcorev1_site_token', '' ) ) < 20 ) {
+		return false; // identity not provisioned = the site cannot connect; keep the activation path open
+	}
+	return ! get_option( 'devdalyt_init_pending', false ); // fresh-install defaults still owed (see the activation hook)
+}
+
+/** The fresh-install defaults, proved; shared by activation and the retry on admin_init (Codex round 3). @return bool both landed. */
+function devdalyt_fresh_defaults() {
+	$ok = devdalyt_option_write( 'devdalyt_excluded_roles', array( 'administrator', 'editor' ) );
+	// A brand-new site starts COOKIELESS: nothing is written to any visitor's device, so the
+	// owner needs no cookie banner for DevDome. Turning returning-visitor tracking on is their
+	// explicit, warned decision. Existing sites are untouched (see the option default).
+	return devdalyt_option_write( 'devdalyt_returning_visitors', false ) && $ok;
+}
+
+/** Site id + token when missing, proved (a token that did not land leaves the connect proof empty). @return bool */
+function devdalyt_provision_identity() {
+	$ok = true;
+	if ( '' === (string) get_option( 'devdcorev1_site_id', '' ) ) {
+		$ok = devdalyt_option_write( 'devdcorev1_site_id', (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
+	}
+	if ( strlen( (string) get_option( 'devdcorev1_site_token', '' ) ) < 20 ) {
+		$ok = devdalyt_option_write( 'devdcorev1_site_token', wp_generate_password( 40, false ) ) && $ok;
+	}
+	return $ok;
+}
+
 add_action( 'admin_init', function () {
 	if ( get_option( 'devdalyt_plugin_version' ) !== DEVDALYT_VERSION ) {
+		// No version row = this site meets the plugin for the FIRST time here (a network subsite never runs the
+		// activation hook; Codex round 4): it gets the fresh privacy defaults exactly like an activation.
+		$fresh = ( null === get_option( 'devdalyt_plugin_version', null ) );
 		devdalyt_seed_options();
+		if ( $fresh && ! get_option( 'devdalyt_init_pending', false ) && ! devdalyt_fresh_defaults() ) {
+			if ( ! devdalyt_option_write( 'devdalyt_init_pending', 1 ) ) {
+				return; // neither the defaults nor the marker landed: no version row this load, the next one retries (DeepSeek round 6)
+			}
+		}
+		// Activation could not prove its writes (Codex round 3): redo the fresh-install defaults and the identity
+		// with the INTENDED values, and clear the marker only when they landed.
+		$pending = (int) get_option( 'devdalyt_init_pending', 0 );
+		if ( 1 === $pending ) {
+			// 1 = defaults owed, 2 = defaults landed and only the identity / the marker's delete are owed (DeepSeek rounds 7-8:
+			// a delete or an identity write that kept failing rewrote the owner's later role / cookie choices on every load).
+			// The step to 2 is written the moment the defaults land, BEFORE the identity is provisioned.
+			if ( devdalyt_fresh_defaults() && devdalyt_option_write( 'devdalyt_init_pending', 2 ) ) {
+				$pending = 2;
+			}
+		}
+		if ( 2 === $pending && ( ! devdalyt_provision_identity() || ! devdalyt_option_delete( 'devdalyt_init_pending' ) ) ) {
+			return; // identity or marker still owed: no version row this load either; the next one retries without touching the defaults
+		}
+		devdalyt_provision_identity();
 		// DevDome-managed service URLs are not user-editable — re-sync to current defaults on upgrade
-		// (everything lives on analytics.devdome.com since 2026-06-10).
-		update_option( 'devdalyt_api_endpoint', DEVDALYT_DEFAULT_API_ENDPOINT );
-		update_option( 'devdalyt_status_endpoint', DEVDALYT_DEFAULT_STATUS_ENDPOINT );
-		update_option( 'devdalyt_stats_endpoint', DEVDALYT_DEFAULT_STATS_ENDPOINT );
-		update_option( 'devdalyt_script_url', DEVDALYT_DEFAULT_SCRIPT_URL );
-		update_option( 'devdalyt_dashboard_url', DEVDALYT_DEFAULT_DASHBOARD_URL );
-		update_option( 'devdalyt_plugin_version', DEVDALYT_VERSION );
+		// (everything lives on analytics.devdome.com since 2026-06-10). The version row is written LAST and only
+		// when every default and URL landed, so a lost write is retried on the next admin load instead of masked.
+		if ( devdalyt_sync_service_urls() && devdalyt_seed_landed() ) {
+			devdalyt_option_write( 'devdalyt_plugin_version', DEVDALYT_VERSION );
+		}
 	}
 } );
 
@@ -188,30 +315,32 @@ register_activation_hook( __FILE__, function () {
 	// excluded-roles default apply — re-activating an existing site changes nothing.
 	$fresh = ( null === get_option( 'devdalyt_plugin_version', null ) );
 	devdalyt_seed_options();
+	$landed = true;
 	if ( $fresh ) {
-		update_option( 'devdalyt_excluded_roles', array( 'administrator', 'editor' ) );
-		// A brand-new site starts COOKIELESS: nothing is written to any visitor's device, so the
-		// owner needs no cookie banner for DevDome. Turning returning-visitor tracking on is their
-		// explicit, warned decision. Existing sites are untouched (see the option default).
-		update_option( 'devdalyt_returning_visitors', false );
+		$landed = devdalyt_fresh_defaults();
+		if ( ! $landed ) {
+			devdalyt_option_write( 'devdalyt_init_pending', 1 ); // the admin_init path redoes them with the intended values (Codex round 3)
+		}
 	}
 	// Auto-provision this site's identity so connecting is one click (no pasting):
 	// site_id is the domain, site_token is a random secret kept server-side only.
 	// Both are suite-shared (devdcorev1_*) — one connect covers every DevDome plugin.
-	if ( '' === (string) get_option( 'devdcorev1_site_id', '' ) ) {
-		update_option( 'devdcorev1_site_id', (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
-	}
-	if ( '' === (string) get_option( 'devdcorev1_site_token', '' ) ) {
-		update_option( 'devdcorev1_site_token', wp_generate_password( 40, false ) );
+	// Proved (DeepSeek round 2): a token that did not land leaves the connect proof empty and the site unable to connect;
+	// the version gate below then keeps the activation path open for the next admin load.
+	$landed = devdalyt_provision_identity() && $landed;
+	// Deactivation clears the daily first-party refresh; a re-activation with the feature still on must bring it
+	// back, or the local tracker copy never refreshes again (Codex round 8). fp_provision() schedules only while
+	// the site is connected and the feature is on, and proves its writes.
+	if ( get_option( 'devdalyt_first_party', false ) && class_exists( 'DEVDALYT_Tracker' ) ) {
+		DEVDALYT_Tracker::fp_provision();
 	}
 	// Service URLs are DevDome-managed (not user-editable) — keep them current so an
 	// upgrade from older endpoints (e.g. the testing host) always points at production.
-	update_option( 'devdalyt_api_endpoint', DEVDALYT_DEFAULT_API_ENDPOINT );
-	update_option( 'devdalyt_status_endpoint', DEVDALYT_DEFAULT_STATUS_ENDPOINT );
-	update_option( 'devdalyt_stats_endpoint', DEVDALYT_DEFAULT_STATS_ENDPOINT );
-	update_option( 'devdalyt_script_url', DEVDALYT_DEFAULT_SCRIPT_URL );
-	update_option( 'devdalyt_dashboard_url', DEVDALYT_DEFAULT_DASHBOARD_URL );
-	update_option( 'devdalyt_plugin_version', DEVDALYT_VERSION );
+	// The version row lands LAST and only when every default landed (DeepSeek round 1): otherwise the
+	// admin_init upgrade path re-seeds on the next load instead of leaving a fresh site half-configured.
+	if ( devdalyt_sync_service_urls() && $landed && devdalyt_seed_landed() ) {
+		devdalyt_option_write( 'devdalyt_plugin_version', DEVDALYT_VERSION );
+	}
 	// Bot detection must work from the first request: fetch the shared devdome-core
 	// feed synchronously now instead of waiting for cron (which may be disabled).
 	if ( function_exists( 'devdcorev1_refresh_feeds' ) ) {
@@ -247,10 +376,13 @@ add_action( 'init', function () {
 		}
 		return;
 	}
-	if ( ! DEVDALYT_Analytics::is_connected() ) {
+	if ( '/.well-known/devdome-analytics.txt' !== $path ) {
+		return; // every other request: no predicate, no identity rewrite, no remote call (Codex round 3)
+	}
+	if ( ! DEVDALYT_Tracker::is_connected_cheap() ) {
 		return; // nothing to verify until the user links the site
 	}
-	if ( '/.well-known/devdome-analytics.txt' === $path ) {
+	{
 		header( 'Content-Type: text/plain; charset=utf-8' );
 		echo 'devdome-analytics-verify-v1';
 		exit;
@@ -271,21 +403,17 @@ add_filter( 'devdome_click_fraud_sources', function ( $sources ) {
 	$endpoint = (string) get_option( 'devdalyt_stats_endpoint', '' );
 	// site_id is auto-provisioned on activation, so it alone doesn't mean "connected" —
 	// require the real connect handshake before any stats call leaves the site.
-	if ( '' === $site || '' === $endpoint || ! DEVDALYT_Analytics::is_connected() ) {
-		return $sources; // not connected yet
+	if ( '' === $site || '' === $endpoint || ! DEVDALYT_Tracker::is_connected_cheap() ) {
+		return $sources; // not connected yet (cheap predicate: this filter runs on admin renders of another plugin)
 	}
 	$bots = get_transient( 'devdalyt_cf_bot_visits' );
 	if ( false === $bots ) {
 		$bots = -1; // sentinel: attempted but no usable answer
-		$resp = wp_remote_get(
-			add_query_arg( array( 'site' => $site, 'days' => 30 ), $endpoint ),
-			array( 'timeout' => 8 )
-		);
-		if ( ! is_wp_error( $resp ) && 200 === (int) wp_remote_retrieve_response_code( $resp ) ) {
-			$data = json_decode( wp_remote_retrieve_body( $resp ), true );
-			if ( is_array( $data ) && isset( $data['bots'] ) ) {
-				$bots = max( 0, (int) $data['bots'] );
-			}
+		// The same token-authenticated stats call the Overview tiles use (Codex round 4): the unauthenticated GET
+		// this used to send was refused by the service, so the bot figure never reached Bot Protection.
+		$data = ( new DEVDALYT_API() )->get_stats( 30 );
+		if ( is_array( $data ) && isset( $data['bots'] ) && null !== $data['bots'] ) {
+			$bots = max( 0, (int) $data['bots'] );
 		}
 		set_transient( 'devdalyt_cf_bot_visits', $bots, HOUR_IN_SECONDS );
 	}
@@ -326,7 +454,7 @@ add_filter( 'devdcorev1_suite_register', function ( $r ) {
 		},
 		'health'   => function () {
 			$href      = admin_url( 'admin.php?page=devdome-analytics' );
-			$connected = ( '' !== (string) get_option( 'devdcorev1_site_id', '' ) );
+			$connected = DEVDALYT_Analytics::is_connected_cached(); // cached only: a hub render never verifies remotely (Codex round 4)
 			$tracking  = (int) get_option( 'devdalyt_tracking_enabled', 0 );
 			$score     = $connected ? ( $tracking ? 100 : 60 ) : 0;
 			$issues    = array();

@@ -20,7 +20,7 @@ if (defined('DEVDCOREV1_LOADED')) {
     return; // a higher/equal version already loaded the library
 }
 define('DEVDCOREV1_LOADED', true);
-define('DEVDCOREV1_VERSION', '1.6.6');
+define('DEVDCOREV1_VERSION', '1.7.1');
 
 if (!defined('DEVDCOREV1_FEED_ENDPOINT')) {
     define('DEVDCOREV1_FEED_ENDPOINT', 'https://api.devdome.com/bot-protection');
@@ -34,7 +34,7 @@ if (!defined('DEVDCOREV1_FEED_ENDPOINT')) {
  * guard line ever executes. A site running an older DevDome plugin whose
  * loader predates the shared-registry fix can therefore still include a second
  * copy of this library from a different path — and that used to be a fatal
- * `Cannot redeclare devdome_core_get_feeds()` that took down wp-admin.
+ * `Cannot redeclare` fatal (the feeds function) that took down wp-admin.
  *
  * Declaring inside function_exists() moves the binding to RUNTIME, so a second
  * include is a harmless no-op no matter which loader performed it. This is the
@@ -329,7 +329,7 @@ if (!function_exists('devdcorev1_get_feeds')) {
             'webdriver'  => $wd,
             'interacted' => $interacted ? 1 : 0,
             'class'      => $class,
-            'path'       => (string) $req->get_param('path'),
+            'path'       => substr(sanitize_text_field((string) $req->get_param('path')), 0, 2000), // bounded, no control bytes (DeepSeek core round 1)
         ));
 
         return new WP_REST_Response(array('ok' => true), 200);
@@ -369,7 +369,20 @@ if (!function_exists('devdcorev1_get_feeds')) {
             }
         }
         usort($v4, function ($a, $b) { return strcmp(base64_decode($a[0]), base64_decode($b[0])); });
-        return array('v4' => $v4, 'v6' => $v6);
+        // Overlapping or adjacent ranges are merged (DeepSeek core round 1): the binary search below assumes disjoint
+        // intervals, and a feed with 10.0.0.0/8 followed by 10.1.0.0/16 used to hide 10.5.0.0 behind the narrower entry.
+        $merged = array();
+        foreach ($v4 as $r) {
+            $n = count($merged);
+            if ($n > 0 && strcmp(base64_decode($r[0]), base64_decode($merged[$n - 1][1])) <= 0) {
+                if (strcmp(base64_decode($r[1]), base64_decode($merged[$n - 1][1])) > 0) {
+                    $merged[$n - 1][1] = $r[1];
+                }
+                continue;
+            }
+            $merged[] = $r;
+        }
+        return array('v4' => $merged, 'v6' => $v6);
     }
 
     /** Build a packed network mask of $bytes bytes for a /$bits prefix. */
@@ -453,6 +466,8 @@ if (!function_exists('devdcorev1_get_feeds')) {
     require_once __DIR__ . '/hub.php';
     require_once __DIR__ . '/hub-account.php';
     require_once __DIR__ . '/hub-report.php';
+    require_once __DIR__ . '/hub-error-report.php'; // "Report this error" button + admin-ajax sender, core 1.7.0
+    require_once __DIR__ . '/abilities.php'; // devdome-tools/get-connection (WP 6.9+ Abilities API), core 1.7.0
     // Absent from the WordPress.org build (.wporg-strip): a wp.org-distributed
     // plugin must never install or activate other plugins on the user's behalf, so the
     // hub links out to the product page instead (hub.php falls back when absent).

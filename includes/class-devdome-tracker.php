@@ -50,7 +50,7 @@ class DEVDALYT_Tracker {
 			status_header( 204 );
 			exit;
 		}
-		if ( '1' === ( isset( $_SERVER['HTTP_DNT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_DNT'] ) ) : '' )
+		if ( ( '1' === ( isset( $_SERVER['HTTP_DNT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_DNT'] ) ) : '' ) || '1' === ( isset( $_SERVER['HTTP_SEC_GPC'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_SEC_GPC'] ) ) : '' ) )
 			&& (bool) get_option( 'devdalyt_respect_dnt', true ) ) {
 			nocache_headers();
 			status_header( 204 );
@@ -84,8 +84,13 @@ class DEVDALYT_Tracker {
 		// Light Cloudflare-aware per-IP/minute flood guard (mirrors the devdome-core beacon) so the
 		// same-origin endpoint can't be abused to hammer the ingest. Best-effort: if the shared
 		// helper is unavailable we skip the guard rather than risk dropping legitimate beacons.
-		if ( function_exists( 'devdcorev1_request_ip' ) ) {
-			$ip   = devdcorev1_request_ip();
+		if ( get_option( 'devdalyt_dnt_admins', true ) && is_user_logged_in() && current_user_can( 'manage_options' ) ) {
+			nocache_headers(); // "Do Not Track Admins" is enforced here too: the cached page cannot know who is reading it (Codex round 1)
+			status_header( 204 );
+			exit;
+		}
+		{
+			$ip   = self::limiter_ip(); // the peer, or the Cloudflare header only when Cloudflare delivered the request (Codex round 1)
 			$key  = 'devdalyt_dde_' . md5( $ip ) . '_' . (int) floor( time() / 60 );
 			$hits = (int) get_transient( $key );
 			if ( $hits >= 120 ) {
@@ -117,6 +122,13 @@ class DEVDALYT_Tracker {
 		$relay = (string) get_option( 'devdalyt_relay_secret', '' );
 		if ( '' !== $relay ) {
 			$headers['X-DD-Relay'] = $relay;
+		} else {
+			// Customer installs have no fleet secret: the site token is what lets the ingest trust the forwarded
+			// visitor identity, exactly like the first-party relay (DeepSeek round 6).
+			$token = (string) get_option( 'devdcorev1_site_token', '' );
+			if ( '' !== $token ) {
+				$headers['X-DD-Site-Token'] = $token;
+			}
 		}
 		$endpoint = (string) get_option( 'devdalyt_api_endpoint', DEVDALYT_DEFAULT_API_ENDPOINT );
 		wp_remote_post( $endpoint, array(
@@ -180,11 +192,33 @@ class DEVDALYT_Tracker {
 	 *
 	 * @return bool
 	 */
-	private static function is_connected_cheap() {
+	public static function is_connected_cheap() {
+		if ( get_option( 'devdalyt_user_disconnected', false ) || get_option( 'devdalyt_remote_disconnected', false ) ) {
+			return false; // an explicit Disconnect, or a definitive rejection, stands whatever stamp survived (Codex rounds 1-2)
+		}
+		$verdict = get_option( 'devdcorev1_conn_state', false );
+		if ( is_array( $verdict ) && empty( $verdict['ok'] ) ) {
+			return false; // a stored negative verdict outranks the stamp, exactly as in is_connected() (Codex round 2)
+		}
+		if ( '' === (string) get_option( 'devdcorev1_site_id', '' ) || '' === (string) get_option( 'devdcorev1_site_token', '' ) ) {
+			return false; // a stamp without an identity (partial migration) cannot send anything the ingest would accept (DeepSeek round 3)
+		}
 		if ( '' !== (string) get_option( 'devdcorev1_connected_at', '' ) ) {
 			return true;
 		}
-		return DEVDALYT_Analytics::is_connected();
+		return DEVDALYT_Analytics::is_connected_cached(); // cached only: never a request or an identity rewrite from a visitor (Codex round 4)
+	}
+
+	/** The address a relay's flood guard keys on: the Cloudflare header counts only when Cloudflare delivered the request. */
+	private static function limiter_ip() {
+		$remote = isset( $_SERVER['REMOTE_ADDR'] ) ? trim( sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) ) : '';
+		if ( self::ip_is_cloudflare( $remote ) && ! empty( $_SERVER['HTTP_CF_CONNECTING_IP'] ) ) {
+			$cf = filter_var( trim( sanitize_text_field( wp_unslash( $_SERVER['HTTP_CF_CONNECTING_IP'] ) ) ), FILTER_VALIDATE_IP );
+			if ( false !== $cf ) {
+				return $cf;
+			}
+		}
+		return $remote;
 	}
 
 	/**
@@ -385,7 +419,9 @@ class DEVDALYT_Tracker {
 			'dir'  => bin2hex( random_bytes( 5 ) ),
 			'file' => bin2hex( random_bytes( 4 ) ) . '.js',
 		);
-		update_option( 'devdalyt_fp_paths', $p );
+		if ( ! devdalyt_option_write( 'devdalyt_fp_paths', $p ) ) {
+			return null; // paths that are not in the database would be advertised once and never answered
+		}
 		return $p;
 	}
 
@@ -427,7 +463,8 @@ class DEVDALYT_Tracker {
 			$b = json_decode( (string) wp_remote_retrieve_body( $r ), true );
 			if ( is_array( $b ) && array_key_exists( 'first_party', $b ) ) {
 				$out['answered'] = true;
-				$out['ok']       = (bool) $b['first_party'];
+				// A real true, on a successful answer: {"ok":false,"first_party":"false"} used to count as entitled (Codex round 8).
+				$out['ok']       = ( ! isset( $b['ok'] ) || true === $b['ok'] ) && true === DEVDALYT_Rest::to_bool( $b['first_party'] );
 				$out['plan']     = isset( $b['plan'] ) ? sanitize_key( (string) $b['plan'] ) : '';
 				if ( ! empty( $b['upgrade_url'] ) ) {
 					$out['url'] = esc_url_raw( (string) $b['upgrade_url'] );
@@ -456,12 +493,18 @@ class DEVDALYT_Tracker {
 
 	/** Provision first-party delivery (called when the switch turns ON): generate the random
 	 *  names, pull the script copy, and schedule the daily refresh. */
+	/** @return bool true when the relay path, the local script copy AND the daily refresh are all in place. */
 	public static function fp_provision() {
-		self::fp_paths( true );
-		self::fp_refresh_script();
-		if ( ! wp_next_scheduled( 'devdalyt_fp_refresh' ) ) {
-			wp_schedule_event( time() + DAY_IN_SECONDS, 'daily', 'devdalyt_fp_refresh' );
+		$paths  = self::fp_paths( true );
+		$script = self::fp_refresh_script(); // may turn the feature off (entitlement said no): then nothing is scheduled
+		if ( ! get_option( 'devdalyt_first_party', false ) ) {
+			return false;
 		}
+		$due = wp_next_scheduled( 'devdalyt_fp_refresh' );
+		if ( ! $due ) {
+			$due = false !== wp_schedule_event( time() + DAY_IN_SECONDS, 'daily', 'devdalyt_fp_refresh' ) && wp_next_scheduled( 'devdalyt_fp_refresh' );
+		}
+		return is_array( $paths ) && $script && (bool) $due;
 	}
 
 	/** Tear down the refresh cron (called when the switch turns OFF). The static file may
@@ -490,32 +533,40 @@ class DEVDALYT_Tracker {
 	 * @return bool Whether a valid local copy exists after the call.
 	 */
 	public static function fp_refresh_script() {
-		if ( ! get_option( 'devdalyt_first_party', false ) ) {
-			return false;
+		if ( ! get_option( 'devdalyt_first_party', false ) || ! self::is_connected_cheap() ) {
+			return false; // a disconnected site asks nothing (Codex round 3); disconnect also turns the feature off and unschedules
 		}
 		$ent = self::fp_entitlement();
 		if ( ( ! empty( $ent['answered'] ) && empty( $ent['ok'] ) ) || ! empty( $ent['auth_failed'] ) ) {
-			update_option( 'devdalyt_first_party', false );
-			if ( ! empty( $ent['auth_failed'] ) ) {
-				update_option( 'devdalyt_fp_auth_failed', 1 );
+			// Only a flag that LANDED takes the cron and the caches with it (DeepSeek round 1): if the write was lost the
+			// feature is still on in the database and tomorrow's refresh gets to try again.
+			if ( devdalyt_option_write( 'devdalyt_first_party', false ) ) {
+				if ( ! empty( $ent['auth_failed'] ) ) {
+					devdalyt_option_write( 'devdalyt_fp_auth_failed', 1 );
+				}
+				self::fp_unschedule();
+				// The relay endpoint is baked into cached HTML; regenerate it or cached pages keep
+				// beaconing to a path that now drops everything until their TTL runs out.
+				DEVDALYT_Rest::purge_page_caches();
 			}
-			self::fp_unschedule();
-			// The relay endpoint is baked into cached HTML; regenerate it or cached pages keep
-			// beaconing to a path that now drops everything until their TTL runs out.
-			DEVDALYT_Rest::purge_page_caches();
 			return false;
 		}
 		if ( ! empty( $ent['answered'] ) ) {
-			delete_option( 'devdalyt_fp_auth_failed' );
+			devdalyt_option_delete( 'devdalyt_fp_auth_failed' );
 		}
 		$p   = self::fp_paths( true );
+		// Paths that are not in the database = no destination (Codex round 2): without this the folder and
+		// file names were empty and the "overwrite" move below targeted the uploads root itself.
+		if ( ! is_array( $p ) || empty( $p['dir'] ) || empty( $p['file'] ) || ! preg_match( '/^[a-f0-9]{10}$/', (string) $p['dir'] ) || ! preg_match( '/^[a-f0-9]{8}\.js$/', (string) $p['file'] ) ) {
+			return self::fp_script_url() !== '';
+		}
 		$src = DEVDALYT_DIR . 'assets/track.js';
 		global $wp_filesystem;
 		if ( ! function_exists( 'WP_Filesystem' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/file.php';
 		}
-		WP_Filesystem();
-		if ( ! $wp_filesystem || ! $wp_filesystem->exists( $src ) ) {
+		// An initialisation that failed (FTP credentials, an unsupported method) leaves an unusable object (Codex round 2).
+		if ( true !== WP_Filesystem() || ! $wp_filesystem || ! $wp_filesystem->exists( $src ) ) {
 			return self::fp_script_url() !== '';
 		}
 		$js = (string) $wp_filesystem->get_contents( $src );
@@ -533,7 +584,8 @@ class DEVDALYT_Tracker {
 			return self::fp_script_url() !== '';
 		}
 		if ( $wp_filesystem->exists( $dst ) && md5( (string) $wp_filesystem->get_contents( $dst ) ) === md5( $js ) ) {
-			return true; // already current — don't touch the file's mtime for nothing
+			self::fp_copy_botd( $wp_filesystem, $dir ); // the bot detector rides along (owner 2026-09-15)
+			return self::fp_script_url() !== ''; // already current (no mtime touch); "valid local copy" = one the visitor will be served
 		}
 		if ( ! wp_mkdir_p( $dir ) ) {
 			return false;
@@ -550,13 +602,72 @@ class DEVDALYT_Tracker {
 		// fp_script_url() then served because "it exists".
 		$tmp = $dst . '.' . substr( md5( uniqid( '', true ) ), 0, 8 ) . '.tmp';
 		if ( ! $wp_filesystem->put_contents( $tmp, $js, FS_CHMOD_FILE ) ) {
-			return $wp_filesystem->exists( $dst );
+			return $wp_filesystem->exists( $dst ) && self::fp_script_url() !== '';
 		}
 		if ( md5( (string) $wp_filesystem->get_contents( $tmp ) ) !== md5( $js ) || ! $wp_filesystem->move( $tmp, $dst, true ) ) {
 			$wp_filesystem->delete( $tmp );
-			return $wp_filesystem->exists( $dst );
+			return $wp_filesystem->exists( $dst ) && self::fp_script_url() !== '';
+		}
+		self::fp_copy_botd( $wp_filesystem, $dir ); // the bot detector rides along (owner 2026-09-15)
+		return self::fp_script_url() !== '';
+	}
+
+	/**
+	 * The bot detector (assets/botd.js, FingerprintJS BotD, MIT) next to the local tracker copy (owner 2026-09-15):
+	 * track.js used to import /botd.js relative to its endpoint, which on a first-party site is the customer's own
+	 * domain, so the request 404ed and every pageview went out without a bot verdict. Best effort and fail-open:
+	 * a copy that did not land leaves the tag's data-botd empty and track.js falls back to the CDN file.
+	 * $dir has already passed the link and containment checks of fp_refresh_script().
+	 */
+	private static function fp_copy_botd( $fs, $dir ) {
+		$src = DEVDALYT_DIR . 'assets/botd.js';
+		$dst = trailingslashit( $dir ) . 'botd.js';
+		// Its own containment proof (DeepSeek round 7): the "already current" fast path of fp_refresh_script() reaches
+		// this before the tracker's realpath() check, and a linked ancestor must never steer this write either.
+		$up        = wp_get_upload_dir();
+		$real_dir  = realpath( $dir );
+		$real_base = realpath( $up['basedir'] );
+		if ( is_link( $up['basedir'] ) || is_link( $dir ) || ! $real_dir || ! $real_base || 0 !== strpos( trailingslashit( $real_dir ), trailingslashit( $real_base ) ) ) {
+			return false;
+		}
+		if ( ! $fs->exists( $src ) || is_link( $dst ) ) {
+			return false;
+		}
+		$js = (string) $fs->get_contents( $src );
+		if ( '' === $js || strlen( $js ) > 262144 ) {
+			return false;
+		}
+		if ( $fs->exists( $dst ) && md5( (string) $fs->get_contents( $dst ) ) === md5( $js ) ) {
+			return true;
+		}
+		$tmp = $dst . '.' . substr( md5( uniqid( '', true ) ), 0, 8 ) . '.tmp';
+		if ( ! $fs->put_contents( $tmp, $js, FS_CHMOD_FILE ) ) {
+			return false;
+		}
+		if ( md5( (string) $fs->get_contents( $tmp ) ) !== md5( $js ) || ! $fs->move( $tmp, $dst, true ) ) {
+			$fs->delete( $tmp );
+			return false;
 		}
 		return true;
+	}
+
+	/** URL of the local bot-detector copy, or '' (track.js then loads the CDN file). Same rules as fp_script_url(). */
+	public static function fp_botd_url() {
+		if ( ! get_option( 'devdalyt_first_party', false ) ) {
+			return ''; // the switch decides, not a file left behind by an earlier provisioning
+		}
+		$script = self::fp_script_url();
+		if ( '' === $script ) {
+			return '';
+		}
+		$p    = self::fp_paths( false );
+		$up   = wp_get_upload_dir();
+		$fdir = trailingslashit( $up['basedir'] ) . $p['dir'];
+		$file = trailingslashit( $fdir ) . 'botd.js';
+		if ( is_link( $file ) || ! file_exists( $file ) || (int) @filesize( $file ) < 1024 ) {
+			return '';
+		}
+		return dirname( $script ) . '/botd.js';
 	}
 
 	/** URL of the local static script copy, or '' when it does not exist (degrade to CDN). */
@@ -565,9 +676,12 @@ class DEVDALYT_Tracker {
 		if ( ! $p ) {
 			return '';
 		}
-		$up = wp_get_upload_dir();
-		if ( ! file_exists( trailingslashit( $up['basedir'] ) . trailingslashit( $p['dir'] ) . $p['file'] ) ) {
-			return '';
+		$up   = wp_get_upload_dir();
+		$fdir = trailingslashit( $up['basedir'] ) . $p['dir'];
+		$file = trailingslashit( $fdir ) . $p['file'];
+		// Never serve through a link (DeepSeek round 2): the refresh refuses to WRITE through one, the URL must refuse to SERVE one.
+		if ( is_link( $up['basedir'] ) || is_link( $fdir ) || is_link( $file ) || ! file_exists( $file ) || (int) @filesize( $file ) < 1024 ) {
+			return ''; // missing, linked or truncated (the real tracker is ~20-30 KB): the CDN tag serves instead
 		}
 		// Media-offload/CDN plugins filter uploads baseurl to a third-party host. Serving the
 		// "first-party" tracker from there defeats the whole feature (a blocker matches the CDN
@@ -579,7 +693,8 @@ class DEVDALYT_Tracker {
 		if ( '' === $up_host || $up_host !== $home_host ) {
 			return '';
 		}
-		return trailingslashit( $up['baseurl'] ) . trailingslashit( $p['dir'] ) . $p['file'];
+		// The page's own scheme (DeepSeek round 3): an http:// uploads baseurl on an https page is mixed content the browser blocks.
+		return trailingslashit( set_url_scheme( $up['baseurl'], is_ssl() ? 'https' : 'http' ) ) . trailingslashit( $p['dir'] ) . $p['file'];
 	}
 
 	/**
@@ -606,9 +721,15 @@ class DEVDALYT_Tracker {
 			status_header( 204 );
 			exit;
 		}
+		// Excluded roles and "Do Not Track Admins" are enforced on the relay too: the cached page cannot know who is reading it (Codex round 1).
+		if ( $this->user_is_excluded() || ( get_option( 'devdalyt_dnt_admins', true ) && is_user_logged_in() && current_user_can( 'manage_options' ) ) ) {
+			nocache_headers();
+			status_header( 204 );
+			exit;
+		}
 		// The dashboard's "Respect Do Not Track" cannot see the visitor on a relayed event
 		// (the forward comes from this server) — enforce it here, where the header still is.
-		if ( '1' === ( isset( $_SERVER['HTTP_DNT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_DNT'] ) ) : '' )
+		if ( ( '1' === ( isset( $_SERVER['HTTP_DNT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_DNT'] ) ) : '' ) || '1' === ( isset( $_SERVER['HTTP_SEC_GPC'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_SEC_GPC'] ) ) : '' ) )
 			&& (bool) get_option( 'devdalyt_respect_dnt', true ) ) {
 			nocache_headers();
 			status_header( 204 );
@@ -618,8 +739,8 @@ class DEVDALYT_Tracker {
 		// clicks. Only with a persistent object cache — without one every transient is two
 		// wp_options writes PER EVENT, which costs more than the guard protects (the worker
 		// has its own per-site limiter either way).
-		if ( function_exists( 'devdcorev1_request_ip' ) && wp_using_ext_object_cache() ) {
-			$ip   = devdcorev1_request_ip();
+		if ( wp_using_ext_object_cache() ) {
+			$ip   = self::limiter_ip();
 			$key  = 'devdalyt_ddp_' . md5( $ip ) . '_' . (int) floor( time() / 60 );
 			$hits = (int) get_transient( $key );
 			if ( $hits >= 240 ) {
@@ -642,7 +763,7 @@ class DEVDALYT_Tracker {
 		if ( null !== $data ) {
 			$t        = (string) $data['event_type'];
 			$is_out   = false !== strpos( $t, 'outbound' );
-			$is_click = false !== strpos( $t, 'click' );
+			$is_click = false !== strpos( $t, 'click' ) || 'search' === $t; // the search words travel under Track Clicks (Codex round 4)
 			if ( ( $is_out && ! get_option( 'devdalyt_outbound_tracking_enabled', true ) )
 				|| ( $is_click && ! $is_out && ! get_option( 'devdalyt_click_tracking_enabled', true ) ) ) {
 				$data = null;
@@ -741,21 +862,22 @@ class DEVDALYT_Tracker {
 			'in_app'        => $text( 'in_app', 100 ),
 			'screen_width'  => $num( 'screen_width', 20000 ),
 			'screen_height' => $num( 'screen_height', 20000 ),
-			'wd'            => ! empty( $raw['wd'] ),
+			'wd'            => true === DEVDALYT_Rest::to_bool( isset( $raw['wd'] ) ? $raw['wd'] : false ),
 			'source_marker' => $text( 'source_marker', 100 ),
 			'target_url'    => $url( 'target_url' ),
 			'via'           => $slug( 'via' ),
 			'asin'          => '' !== $asin ? $asin : null,
 			// Event-specific extras, each individually bounded.
 			'engaged_seconds' => $num( 'engaged_seconds', 100000 ),
-			'interacted'      => ! empty( $raw['interacted'] ),
+			'interacted'      => true === DEVDALYT_Rest::to_bool( isset( $raw['interacted'] ) ? $raw['interacted'] : false ),
 			'query'           => $text( 'query', 200 ),
 			'host'            => $text( 'host', 100 ),
 			'transit_from'    => $text( 'transit_from', 100 ),
 			'transit_via'     => $text( 'transit_via', 20 ),
 			'rc'              => $num( 'rc', 50 ),
-			'botd'            => isset( $raw['botd'] ) ? (bool) $raw['botd'] : null,
+			'botd'            => isset( $raw['botd'] ) && null !== DEVDALYT_Rest::to_bool( $raw['botd'] ) ? DEVDALYT_Rest::to_bool( $raw['botd'] ) : null,
 			'botd_kind'       => $slug( 'botd_kind' ),
+			'ai_ref'          => get_option( 'devdalyt_ai_tracking_enabled', true ) ? 1 : 0, // the saved switch, never the client's claim (Codex round 7)
 			// Marks the event as delivered through this site's own domain, so the dashboard can
 			// report how many visitors first-party delivery recovered. Set by US, never the client.
 			'fp'              => true,
@@ -767,7 +889,7 @@ class DEVDALYT_Tracker {
 				unset( $data[ $k ] );
 			}
 		}
-		foreach ( array( 'screen_width', 'screen_height', 'engaged_seconds', 'rc', 'botd' ) as $k ) {
+		foreach ( array( 'screen_width', 'screen_height', 'engaged_seconds', 'rc', 'botd', 'ai_ref' ) as $k ) {
 			if ( null === $data[ $k ] ) {
 				unset( $data[ $k ] );
 			}
@@ -791,8 +913,8 @@ class DEVDALYT_Tracker {
 		// options above keep the real upstream URLs; only what the page embeds changes.
 		// Script copy missing (readonly uploads, failed fetch)? Degrade to the CDN tag —
 		// the event relay stays first-party either way.
-		if ( get_option( 'devdalyt_first_party', false ) ) {
-			$fp_paths = self::fp_paths( true );
+		$fp_paths = get_option( 'devdalyt_first_party', false ) ? self::fp_paths( false ) : null; // read-only on a visitor render; provisioning creates the paths
+		if ( is_array( $fp_paths ) && ! empty( $fp_paths['ep'] ) ) { // paths that could not be stored = plain CDN tag this render (DeepSeek round 1)
 			$fp_js    = self::fp_script_url();
 			// Copy missing (readonly uploads, a cleanup plugin)? Degrade to the CDN tag and let
 			// the daily cron/settings save rebuild it. NEVER rebuild from a visitor's render:
@@ -811,7 +933,7 @@ class DEVDALYT_Tracker {
 		// tracking OFF means cookieless: track.js writes NOTHING to the device (no cookie, no
 		// localStorage, no outbox) and sends no visitor/session id — the server derives a rotating
 		// one from the request instead. Default true so an upgrade never silently drops the cookie.
-		$cookieless   = get_option( 'devdalyt_returning_visitors', true ) ? 'false' : 'true';
+		$cookieless   = get_option( 'devdalyt_returning_visitors', false ) ? 'false' : 'true'; // a missing row stores nothing on the device
 
 		// Note: the site_token is intentionally NOT printed in the public page —
 		// the browser tracker is identified by site_id (domain) only. The token
@@ -839,8 +961,9 @@ class DEVDALYT_Tracker {
 		// Config BEFORE the tag: the tag loads `async`, where document.currentScript is null at
 		// run time, so track.js cannot read its own data-* attributes. __DDCFG is the reliable
 		// source; the attributes stay for the dashboard ownership check and older track.js.
+		$botd_url = self::fp_botd_url(); // '' outside first-party mode: track.js loads the CDN copy
 		$cfg_js = sprintf(
-			'window.__DDCFG={site:%s,siteId:%s,account:%s,endpoint:%s,respectDnt:%s,cookieless:%s,clicks:%s,outbound:%s,fp:%s};',
+			'window.__DDCFG={site:%s,siteId:%s,account:%s,endpoint:%s,respectDnt:%s,cookieless:%s,clicks:%s,outbound:%s,fp:%s,ai:%s,botd:%s,debug:%s};',
 			wp_json_encode( $site_id, $js_esc ),
 			wp_json_encode( $site_id, $js_esc ),
 			wp_json_encode( $account_id, $js_esc ),
@@ -849,16 +972,19 @@ class DEVDALYT_Tracker {
 			$cookieless, // 'true' | 'false' literal - track.js writes nothing to the device when true
 			$clicks,     // 'true' | 'false' literal - track.js sends no click events when false (review 2026-09-11)
 			$outbound,   // 'true' | 'false' literal - track.js sends no outbound/ad click events when false
-			wp_json_encode( $fp_endpoint, $js_esc )
+			wp_json_encode( $fp_endpoint, $js_esc ),
+			$ai,         // 'true' | 'false' literal - AI-assistant referrers are labelled "ai" on the dashboard when true (owner 2026-09-15)
+			wp_json_encode( $botd_url, $js_esc ), // local bot-detector copy in first-party mode, '' = the CDN file
+			get_option( 'devdalyt_debug_mode', false ) ? 'true' : 'false' // track.js logs every event it sends to the console (Codex round 8: the switch had no effect)
 		);
 		wp_add_inline_script( 'devdalyt-tracker', $cfg_js, 'before' );
 
 		// Outbound-click detector, attached AFTER the tag. wp_add_inline_script prints it in its
 		// OWN <script> block, so it still runs when an ad-blocker refuses the external src - which
 		// is the entire point of it: clicks stay counted when track.js never loads.
-		$dnt_on = ( 'true' === $dnt && '1' === ( isset( $_SERVER['HTTP_DNT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_DNT'] ) ) : '' ) );
+		$dnt_on = ( 'true' === $dnt && ( '1' === ( isset( $_SERVER['HTTP_DNT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_DNT'] ) ) : '' ) || '1' === ( isset( $_SERVER['HTTP_SEC_GPC'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_SEC_GPC'] ) ) : '' ) ) );
 		if ( 'true' === $outbound && ! $dnt_on ) {
-			wp_add_inline_script( 'devdalyt-tracker', $this->click_detector_js( $fp_endpoint, $site_id, $account_id, 'true' === $dnt ), 'after' );
+			wp_add_inline_script( 'devdalyt-tracker', $this->click_detector_js( $fp_endpoint, $site_id, $account_id, 'true' === $dnt, 'true' === $cookieless ), 'after' );
 		}
 
 		// data-account also lets the DevDome dashboard verify ownership by reading the live page.
@@ -874,6 +1000,9 @@ class DEVDALYT_Tracker {
 			'data-no-optimize'       => '1',      // cache/optimiser plugins: leave this tag alone
 			'data-no-defer'          => '1',
 		);
+		if ( '' !== $botd_url ) {
+			$this->tag_attrs['data-botd'] = $botd_url;
+		}
 		if ( '' !== $account_id ) {
 			$this->tag_attrs['data-account'] = $account_id;
 		}
@@ -888,24 +1017,55 @@ class DEVDALYT_Tracker {
 		// escapes every attribute AND Plugin Check's NonEnqueuedScript sniff reads
 		// a literal script tag in plugin source as hand-printed markup (one ERROR,
 		// and wp.org wants zero).
-		return wp_get_script_tag( array_merge( array( 'src' => $src, 'async' => true ), $this->tag_attrs ) );
+		$attrs = array_merge( array( 'src' => $src, 'async' => true ), $this->tag_attrs );
+		$ours  = wp_get_script_tag( $attrs );
+		// WordPress hands this filter the WHOLE block for the handle: the inline "before" config (window.__DDCFG),
+		// the src tag and any "after" script. Returning only our tag threw the config away on every WordPress site
+		// (live-verified on test2 2026-09-15: no __DDCFG in the page, so track.js ran on its defaults and the
+		// switches never reached it). Only the src element is swapped; everything around it stays.
+		// Only the element that carries our handle's id (or our src) is swapped; its nonce / type="module" survive on the
+		// replacement, and when nothing matches the block is returned untouched (Codex round 7: the old fallback
+		// dropped both inline blocks).
+		$done    = false;
+		$swapped = preg_replace_callback( '~<script\b([^>]*)>\s*</script>\s*~i', function ( $m ) use ( $attrs, $src, &$done ) {
+			if ( $done || ( false === strpos( $m[1], 'devdalyt-tracker-js' ) && false === strpos( $m[1], $src ) ) ) {
+				return $m[0];
+			}
+			$done = true;
+			// Every attribute of the original element survives (integrity, crossorigin, referrerpolicy, a nonce written with
+			// spaces around "="); ours win where they overlap (Codex round 8).
+			$orig = array();
+			if ( preg_match_all( '/([a-zA-Z_:][-\w:.]*)(?:\s*=\s*("[^"]*"|\'[^\']*\'|[^\s"\'>]+))?/', $m[1], $aa, PREG_SET_ORDER ) ) {
+				foreach ( $aa as $a ) {
+					$name = strtolower( $a[1] );
+					if ( in_array( $name, array( 'src', 'async', 'defer' ), true ) ) {
+						continue;
+					}
+					$orig[ $name ] = isset( $a[2] ) && '' !== $a[2] ? trim( $a[2], "\"'" ) : true;
+				}
+			}
+			$attrs = array_merge( $orig, $attrs );
+			return wp_get_script_tag( $attrs );
+		}, (string) $tag );
+		return ( $done && is_string( $swapped ) ) ? $swapped : $tag;
 	}
 
 	/** The inline, unblockable outbound-click detector. Self-contained (no external file), beacons
 	 *  same-origin to /dd-e. Counts a click the moment a visitor navigates to an external domain. */
-	private function click_detector_js( $fp, $site_id, $account_id = '', $respect_dnt = true ) {
+	private function click_detector_js( $fp, $site_id, $account_id = '', $respect_dnt = true, $cookieless = true ) {
 		// Same <script>-context escaping as inject(): JSON_HEX_* keeps <, >, &, ' and " out of the
 		// literal so no stored value can close the tag. JS decodes the escapes to the same string.
 		$cfg = wp_json_encode(
-			array( 'fp' => (string) $fp, 's' => (string) $site_id, 'ac' => (string) $account_id, 'dnt' => (bool) $respect_dnt ),
+			array( 'fp' => (string) $fp, 's' => (string) $site_id, 'ac' => (string) $account_id, 'dnt' => (bool) $respect_dnt, 'cl' => (bool) $cookieless ), // cl: cookieless = in-memory ids only (DeepSeek round 7)
 			JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
 		);
 		$js = <<<'DDJS'
 (function(){try{
 var C=__DDCFG_JSON__,FP=C.fp,S=C.s;
 if(window.__ddClick)return;window.__ddClick=1;
-if(C.dnt&&(navigator.doNotTrack==='1'||window.doNotTrack==='1'||navigator.msDoNotTrack==='1'))return;
-function gid(k,st){try{var v=st.getItem(k);if(!v){v=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));st.setItem(k,v);}return v;}catch(e){return''+Math.random();}}
+if(C.dnt&&(navigator.doNotTrack==='1'||window.doNotTrack==='1'||navigator.msDoNotTrack==='1'||navigator.globalPrivacyControl===true))return;
+var M={};function rnd(){return (self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));}
+function gid(k,sn){if(C.cl){return M[k]||(M[k]=rnd());}try{var st=window[sn];var v=st.getItem(k);if(!v){v=rnd();st.setItem(k,v);}return v;}catch(e){return M[k]||(M[k]=rnd());}}
 var ua=navigator.userAgent||'';
 var os=/Windows/.test(ua)?'windows':/Mac OS/.test(ua)?'macos':/Android/.test(ua)?'android':/iPhone|iPad|iPod/.test(ua)?'ios':/Linux/.test(ua)?'linux':'other';
 var br=/Edg\//.test(ua)?'edge':/Firefox\//.test(ua)?'firefox':/Chrome\//.test(ua)?'chrome':(/Safari\//.test(ua)&&!/Chrome\//.test(ua))?'safari':'other';
@@ -918,7 +1078,7 @@ var u;try{u=new URL(h,location.href);}catch(_){return;}
 // Same-host links (incl. /go/ and other transit slugs) are NOT beaconed: the server side of the
 // hop logs the redirect event itself — beaconing here double-counted every cloaked buy click.
 if(!u.host||u.host===location.host)return;if(SH.test(u.href))return;
-var p={event_type:'amazon_outbound_click',site_id:S,site_domain:S,account_id:C.ac||null,page_url:location.href,page_path:location.pathname+location.search,referrer:document.referrer||null,visitor_id:gid('td_vid',localStorage),session_id:gid('td_sid',sessionStorage),browser:br,os:os,device_type:dev,user_agent:ua,language:navigator.language,target_url:u.href,via:'click',asin:((a.getAttribute('data-asin')||'').toUpperCase())||null};
+var p={event_type:'amazon_outbound_click',site_id:S,site_domain:S,account_id:C.ac||null,page_url:location.href,page_path:location.pathname+location.search,referrer:document.referrer||null,visitor_id:gid('td_vid','localStorage'),session_id:gid('td_sid','sessionStorage'),browser:br,os:os,device_type:dev,user_agent:ua,language:navigator.language,target_url:u.href,via:'click',asin:((a.getAttribute('data-asin')||'').toUpperCase())||null};
 var b=JSON.stringify(p);
 try{if(navigator.sendBeacon){navigator.sendBeacon(FP,new Blob([b],{type:'text/plain;charset=UTF-8'}));}else{fetch(FP,{method:'POST',body:b,keepalive:true,mode:'same-origin'});}}catch(_){}
 },true);
@@ -929,7 +1089,7 @@ DDJS;
 
 	/** Decide whether the script should be printed for this request. */
 	private function should_track() {
-		if ( ! DEVDALYT_Analytics::is_connected() ) {
+		if ( ! self::is_connected_cheap() ) { // the visitor path never verifies remotely or rewrites the identity (DeepSeek round 2)
 			return false;
 		}
 		// A Redirect Manager rule is handling this render (JS/click-gated redirect page) — the page

@@ -30,12 +30,17 @@
   // The site's click switches (review 2026-09-11): the connector prints them in __DDCFG; manually
   // pasted tags may carry data-click-tracking / data-outbound-tracking. Default on.
   var CLICKS   = (CFG.clicks !== undefined) ? !!CFG.clicks : !(SCRIPT && SCRIPT.getAttribute("data-click-tracking") === "false");
+  // "Track AI Referrals" (owner 2026-09-15): sent with every event as ai_ref; the ingest labels a visit that arrived
+  // from an AI assistant (ChatGPT, Perplexity, Claude, Gemini, Copilot, ...) as source "ai" only while it is on.
+  var AI_REF   = (CFG.ai !== undefined) ? !!CFG.ai : !(SCRIPT && SCRIPT.getAttribute("data-ai-tracking") === "false");
+  // The bot detector: the plugin's own copy in first-party mode (data-botd / CFG.botd), else the file next to the endpoint.
+  var BOTD_URL = CFG.botd || (SCRIPT && SCRIPT.getAttribute("data-botd")) || "";
   var OUTBOUND = (CFG.outbound !== undefined) ? !!CFG.outbound : !(SCRIPT && SCRIPT.getAttribute("data-outbound-tracking") === "false");
 
   // Honor "Do Not Track" when the site enabled the switch — bail before any identity or beacon.
   var RESPECT_DNT = (CFG.respectDnt !== undefined) ? !!CFG.respectDnt
     : (SCRIPT && SCRIPT.getAttribute("data-respect-dnt") === "true");
-  if (RESPECT_DNT && (navigator.doNotTrack === "1" || window.doNotTrack === "1" || navigator.msDoNotTrack === "1")) return;
+  if (RESPECT_DNT && (navigator.doNotTrack === "1" || window.doNotTrack === "1" || navigator.msDoNotTrack === "1" || navigator.globalPrivacyControl === true)) return; // GPC counts like DNT (DeepSeek round 6)
 
   function resolveDefaultEndpoint() {
     try {
@@ -64,10 +69,11 @@
   //     log a click under the SAME visit. This is what affiliate attribution
   //     needs. The dashboard warns that enabling it may require consent.
   //
-  // The id is NEVER put in a URL: a shared or edited transit link must not carry
-  // a visitor id.
+  // The id never rides a shareable URL. The one exception is a same-domain /dd-go buy link the
+  // visitor is clicking right now (see the click handler): the session and visitor id go on that
+  // redirect so the edge can log the click under the same visit. Cookieless mode appends nothing.
   var COOKIELESS = (CFG.cookieless !== undefined) ? !!CFG.cookieless
-    : (SCRIPT && SCRIPT.getAttribute("data-cookieless") === "true");
+    : !(SCRIPT && SCRIPT.getAttribute("data-cookieless") === "false"); // cookieless unless the tag says otherwise (DeepSeek round 5)
 
   function uid() {
     return (crypto && crypto.randomUUID) ? crypto.randomUUID()
@@ -78,7 +84,7 @@
     return m ? decodeURIComponent(m[1]) : null;
   }
   function writeCookie(n, v) {
-    try { document.cookie = n + "=" + encodeURIComponent(v) + "; path=/; max-age=63072000; SameSite=Lax"; } catch (_) {}
+    try { document.cookie = n + "=" + encodeURIComponent(v) + "; path=/; max-age=63072000; SameSite=Lax" + (location.protocol === "https:" ? "; Secure" : ""); } catch (_) {}
   }
   function getVisitorId() {
     // Cookieless: touch NOTHING. Not even a read — reading localStorage is still
@@ -158,7 +164,7 @@
   // fragmented one logical page into many Pages rows (/ vs /?srsltid=… vs /?utm_*) and — for _dd — leaked
   // an internal stitch value into a stored path. Content-bearing params (?p=, ?category=…) are kept, so
   // the drill-down still matches. Mirrors the display normalization the dashboard would otherwise need.
-  var DROP_PARAMS = /^(_dd|d|dd_ref|dd_out|utm_[a-z]+|srsltid|gclid|gclsrc|gbraid|wbraid|dclid|fbclid|msclkid|mc_cid|mc_eid|gad_source|_ga|yclid|igshid|ttclid|twclid)$/i;
+  var DROP_PARAMS = /^(_dd|dd_ref|dd_out|utm_[a-z]+|srsltid|gclid|gclsrc|gbraid|wbraid|dclid|fbclid|msclkid|mc_cid|mc_eid|gad_source|_ga|yclid|igshid|ttclid|twclid)$/i;
   function cleanPagePath() {
     try {
       var qs = new URLSearchParams(location.search);
@@ -186,6 +192,8 @@
   }
 
   // --- send -------------------------------------------------------------
+  // The link's host is an Amazon store host (amazon.<tld>, with or without a subdomain), nothing else.
+  function amazonHost(u) { try { var h = new URL(u, location.href).hostname.toLowerCase(); return /(^|\.)amazon\.(com|co\.uk|de|fr|it|es|ca|com\.au|co\.jp|in|com\.br|com\.mx|nl|se|pl|sg|ae|sa|com\.tr|eg|cn|com\.be|ie)$/.test(h); } catch (_) { return false; } }
   function basePayload() {
     var p = {
       site_id: SITE_ID,
@@ -203,7 +211,8 @@
       screen_height: DEV.screen_height,
       language: DEV.language,
       timezone: DEV.timezone,
-      wd: (navigator.webdriver === true)   // automation flag (Selenium/Puppeteer/Playwright/agentic browsers)
+      wd: (navigator.webdriver === true),  // automation flag (Selenium/Puppeteer/Playwright/agentic browsers)
+      ai_ref: AI_REF ? 1 : 0
     };
     if (ACCOUNT) p.account_id = ACCOUNT;
     // optional source marker from URL params
@@ -248,6 +257,7 @@
 
   function send(event_type, extra, useBeacon) {
     var p = basePayload();
+    if (CFG.debug && window.console) { try { console.log("DevDome Analytics:", event_type, extra || {}); } catch (_) {} } // Debug mode (Codex round 8: the switch had no effect)
     p.event_type = event_type;
     if (extra) { for (var k in extra) p[k] = extra[k]; }
     var body = JSON.stringify(p);
@@ -308,7 +318,13 @@
     }
     setTimeout(function () { firePv(null); }, 700);
     var url = null, dynImport = null;
-    try { url = new URL("/botd.js", API).href; } catch (_) {}
+    // Local copy first; else the file next to the DevDome endpoint; on a first-party endpoint (same origin as the page)
+    // the DevDome CDN, never the site root (Codex round 7).
+    var BOTD_CDN = "https://analytics.devdome.com/botd.js";
+    try {
+      if (BOTD_URL) url = new URL(BOTD_URL, location.href).href;
+      else { var apiOrigin = new URL(API, location.href).origin; url = (apiOrigin === location.origin) ? BOTD_CDN : new URL("/botd.js", API).href; }
+    } catch (_) { url = BOTD_CDN; }
     // new Function defers the import() syntax to runtime so ancient browsers that can't parse it
     // (and strict-CSP no-eval pages) fail HERE — caught, fail-open — never break the rest of track.js.
     try { dynImport = new Function("u", "return import(u)"); } catch (_) {}
@@ -450,7 +466,7 @@
         var dh = a.getAttribute("href") || "";
         if (dh.indexOf("/dd-go") !== -1 && dh.indexOf("?") !== -1) {
           var add = "";
-          if (!/[?&]sid=/.test(dh)) add += "&sid=" + encodeURIComponent(SID) + "&vid=" + encodeURIComponent(VID);
+          if (!/[?&]sid=/.test(dh) && SID && VID) add += "&sid=" + encodeURIComponent(SID) + "&vid=" + encodeURIComponent(VID); // cookieless: no ids at all, never the string "null"
           if (!/[?&]b=/.test(dh))   add += "&b=" + encodeURIComponent(DEV.browser) + "&o=" + encodeURIComponent(DEV.os) + "&d=" + encodeURIComponent(DEV.device_type);
           if (navigator.webdriver === true && !/[?&]wd=/.test(dh)) add += "&wd=1";
           if (ACCOUNT && !/[?&]ac=/.test(dh)) add += "&ac=" + encodeURIComponent(ACCOUNT);
@@ -469,7 +485,7 @@
     var slugM = null;
     try { slugM = TRANSIT_SLUG.exec((u && u.pathname) || ""); } catch (_) {}
     if (slugM) return;
-    var isAmazon = /amazon\.[a-z.]+/i.test(url) || a.hasAttribute("data-amazon");
+    var isAmazon = amazonHost(url) || a.hasAttribute("data-amazon"); // the HOST, both ends bounded: amazon.com.evil.com is not Amazon (DeepSeek round 7)
     // Exclude social-share / sharing widgets (facebook, x, reddit, whatsapp, …) — those are not buy clicks.
     var isShare = /facebook\.|fb\.me|twitter\.|\/\/x\.com|linkedin\.|instagram\.|pinterest\.|reddit\.|redd\.it|tumblr\.|whatsapp|wa\.me|t\.me|telegram|getpocket|flipboard|mix\.com|vk\.com|threads\.net|tiktok\.|youtube\.|youtu\.be|sharer|\/intent\/|share-offsite|[?&]url=|\/submit\?|[?&]text=/i.test(url);
 

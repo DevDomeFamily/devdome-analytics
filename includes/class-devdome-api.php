@@ -1,7 +1,7 @@
 <?php
 /**
  * API client — talks to DevDome over HTTPS via wp_remote_post.
- * Sends only basic technical data; never user/content/order data.
+ * Sends basic technical data plus the site administrator's e-mail address (disclosed in the readme); never visitor, content or order data.
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -17,7 +17,7 @@ class DEVDALYT_API {
 	 * Delete this site's collected data on DevDome (authenticated by site_id + site_token).
 	 * Used by Reset Analytics and by Disconnect when the user opts to delete now.
 	 *
-	 * @return bool True on a 200 from the backend.
+	 * @return bool True only when the service answered 2xx AND {"ok":true} (Codex round 1: a 200 with ok:false is not a purge).
 	 */
 	public function purge() {
 		$endpoint = str_replace( '/plugin/status', '/plugin/purge',
@@ -32,7 +32,12 @@ class DEVDALYT_API {
 			'headers' => array( 'Content-Type' => 'application/json' ),
 			'body'    => wp_json_encode( array( 'site_id' => $site_id, 'site_domain' => $site_id, 'site_token' => $token ) ),
 		) );
-		return ! is_wp_error( $resp ) && 200 === (int) wp_remote_retrieve_response_code( $resp );
+		if ( is_wp_error( $resp ) ) {
+			return false;
+		}
+		$code = (int) wp_remote_retrieve_response_code( $resp );
+		$data = json_decode( (string) wp_remote_retrieve_body( $resp ), true );
+		return $code >= 200 && $code < 300 && is_array( $data ) && isset( $data['ok'] ) && true === $data['ok'];
 	}
 
 	/**
@@ -60,7 +65,7 @@ class DEVDALYT_API {
 			return array( 'ok' => false, 'message' => $resp->get_error_message() );
 		}
 		$data = json_decode( wp_remote_retrieve_body( $resp ), true );
-		if ( 200 === (int) wp_remote_retrieve_response_code( $resp ) && is_array( $data ) && ! empty( $data['request_token'] ) && ! empty( $data['nonce'] ) ) {
+		if ( 200 === (int) wp_remote_retrieve_response_code( $resp ) && is_array( $data ) && isset( $data['ok'] ) && true === $data['ok'] && ! empty( $data['request_token'] ) && ! empty( $data['nonce'] ) ) { // ok:true as well as the fields (DeepSeek round 5)
 			return array( 'ok' => true, 'request_token' => (string) $data['request_token'], 'nonce' => (string) $data['nonce'] );
 		}
 		return array( 'ok' => false, 'message' => is_array( $data ) && ! empty( $data['error'] ) ? (string) $data['error'] : __( 'Could not start connect.', 'devdome-analytics' ) );
@@ -91,7 +96,7 @@ class DEVDALYT_API {
 			return array( 'ok' => false, 'message' => $resp->get_error_message() );
 		}
 		$data = json_decode( wp_remote_retrieve_body( $resp ), true );
-		if ( 200 === (int) wp_remote_retrieve_response_code( $resp ) && is_array( $data ) && ! empty( $data['ok'] ) && ! empty( $data['account_id'] ) ) {
+		if ( 200 === (int) wp_remote_retrieve_response_code( $resp ) && is_array( $data ) && isset( $data['ok'] ) && true === $data['ok'] && ! empty( $data['account_id'] ) ) {
 			return array( 'ok' => true, 'account_id' => (string) $data['account_id'] );
 		}
 		return array( 'ok' => false, 'message' => is_array( $data ) && ! empty( $data['error'] ) ? (string) $data['error'] : __( 'Could not complete connect.', 'devdome-analytics' ) );
@@ -119,10 +124,10 @@ class DEVDALYT_API {
 		$code = (int) wp_remote_retrieve_response_code( $resp );
 		$data = json_decode( wp_remote_retrieve_body( $resp ), true );
 
-		if ( 200 === $code && is_array( $data ) && ! empty( $data['ok'] ) ) {
-			update_option( 'devdalyt_last_connection_test', gmdate( 'c' ) );
+		if ( 200 === $code && is_array( $data ) && isset( $data['ok'] ) && true === $data['ok'] ) {
+			devdalyt_option_write( 'devdalyt_last_connection_test', gmdate( 'c' ) ); // proved like every write; bookkeeping only, the answer does not depend on it
 			if ( ! empty( $data['last_event_at'] ) ) {
-				update_option( 'devdalyt_last_event_sent_at', sanitize_text_field( $data['last_event_at'] ) );
+				devdalyt_option_write( 'devdalyt_last_event_sent_at', sanitize_text_field( $data['last_event_at'] ) );
 			}
 			return array(
 				'ok'            => true,
@@ -152,7 +157,9 @@ class DEVDALYT_API {
 		// Note: the site_token is intentionally NOT sent here. Bot-visit ingest is identified by
 		// site_id/site_domain like every other tracker event; the token only gates the private
 		// /plugin/* endpoints (status, purge, stats), so it must not ride the public ingest endpoint.
-		$path    = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '/';
+		// Path only, never the query string (DeepSeek round 1): ?email=... or ?token=... must not travel with a bot hit.
+		$path    = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_parse_url( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ), PHP_URL_PATH ) : '/';
+		$path    = '' === $path ? '/' : $path;
 		$payload = array(
 			'event_type'  => 'bot_visit',
 			'site_id'     => $site_id,
@@ -183,7 +190,7 @@ class DEVDALYT_API {
 	 * @return array<string,mixed>
 	 */
 	public function get_stats( $days = 7 ) {
-		$days     = max( 1, (int) $days );
+		$days     = min( 365, max( 1, (int) $days ) );
 		$endpoint = (string) get_option( 'devdalyt_stats_endpoint', DEVDALYT_DEFAULT_STATS_ENDPOINT );
 		$site     = (string) get_option( 'devdcorev1_site_id', '' );
 		$token    = (string) get_option( 'devdcorev1_site_token', '' );

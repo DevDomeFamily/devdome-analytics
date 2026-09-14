@@ -23,6 +23,27 @@
 		} ).then( function ( r ) { return r.json().then( function ( j ) { return { ok: r.ok, data: j }; } ); } );
 	}
 	function setText( id, v ) { var el = document.getElementById( id ); if ( el ) { el.textContent = v; } }
+	// The server's own words when it gave any (a database error names the query; the guard's message says what to do).
+	function why( r, fallback ) { var m = r && r.data && ( r.data.message || ( r.data.data && r.data.data.message ) ); return m && typeof m === 'string' ? fallback + ' ' + m : fallback; }
+	// A failed action: red banner at the top of the app with "Report this error" (core 1.7.0). Replaces alert().
+	// The banner goes away on the next tab switch or action, like every result banner (DESIGN.md 22).
+	function fail( msg, screen ) {
+		var old = app.querySelector( '.da-fail' ); if ( old ) { old.remove(); }
+		var box = document.createElement( 'div' ); box.className = 'da-fail';
+		box.setAttribute( 'style', 'margin:16px 24px 0;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#b91c1c;font-size:13px;' );
+		box.appendChild( document.createTextNode( msg ) );
+		if ( window.devdcorev1Report ) {
+			var ctx = { plugin: 'devdome-analytics', version: app.getAttribute( 'data-version' ) || '', error: msg, screen: screen || 'Analytics' };
+			var wrap = document.createElement( 'span' ); wrap.className = 'ddc-report';
+			var btn = document.createElement( 'button' ); btn.type = 'button'; btn.className = 'ddc-report-btn'; btn.setAttribute( 'data-ddc-report', JSON.stringify( ctx ) ); btn.textContent = 'Report this error';
+			wrap.appendChild( btn ); box.appendChild( wrap );
+		}
+		app.insertBefore( box, app.firstChild );
+	}
+	function clearFail() { var old = app.querySelector( '.da-fail' ); if ( old ) { old.remove(); } }
+	// A failure found on an action that then reloads the page (partial disconnect): park the message, show it after the reload.
+	function failAfterReload( msg, screen ) { try { var prev = JSON.parse( sessionStorage.getItem( 'da-fail' ) || 'null' ); if ( prev && prev.m ) { msg = prev.m + ' ' + msg; } sessionStorage.setItem( 'da-fail', JSON.stringify( { m: msg, s: screen } ) ); } catch ( e ) { fail( msg, screen ); } }
+	try { var parked = sessionStorage.getItem( 'da-fail' ); if ( parked ) { sessionStorage.removeItem( 'da-fail' ); parked = JSON.parse( parked ); if ( parked && parked.m ) { fail( parked.m, parked.s ); } } } catch ( e ) {}
 
 	// Tab switching (panels render once; switching is instant client-side, hash-synced).
 	var tabs = app.querySelectorAll( '.dd-tab[data-dd-tab]' ), panels = app.querySelectorAll( '.dd-tabpanel[data-dd-panel]' );
@@ -36,6 +57,7 @@
 		t.addEventListener( 'click', function ( e ) {
 			e.preventDefault();
 			var name = t.getAttribute( 'data-dd-tab' );
+			clearFail();
 			showTab( name );
 			if ( window.history && history.replaceState ) { history.replaceState( null, '', '#' + name ); }
 		} );
@@ -52,10 +74,10 @@
 		saveBtn.disabled = true;
 		call( 'settings', 'POST', { excluded_roles: roles } ).then( function ( r ) {
 			saveBtn.disabled = false;
-			if ( ! r || ! r.ok || ! r.data || r.data.ok !== true ) { alert( 'The excluded roles could not be saved. Please try again.' ); return; }
+			if ( ! r || ! r.ok || ! r.data || r.data.ok !== true ) { fail( why( r, 'The excluded roles could not be saved.' ), 'Analytics settings: excluded roles' ); return; }
 			var n = document.getElementById( 'da-saved-note' );
 			if ( n ) { n.style.display = ''; setTimeout( function () { n.style.display = 'none'; }, 2500 ); }
-		} ).catch( function () { saveBtn.disabled = false; } );
+		} ).catch( function ( e ) { saveBtn.disabled = false; fail( 'The excluded roles could not be saved (' + ( e && e.message ? e.message : 'request failed' ) + ').', 'Analytics settings: excluded roles' ); } );
 	} ); }
 
 	// Overview metrics (async — never blocks page load). 1:1 with the dashboard.
@@ -94,12 +116,15 @@
 	app.querySelectorAll( '[data-setting]' ).forEach( function ( cb ) {
 		cb.addEventListener( 'change', function () {
 			var key = cb.getAttribute( 'data-setting' ), on = cb.checked, body = {}; body[ key ] = on;
-			if ( key === 'tracking' ) { var p = document.getElementById( 'da-tracking-pill' ); if ( p ) { p.textContent = on ? 'On' : 'Off'; p.className = 'da-pill ' + ( on ? 'is-on' : 'is-off' ); } }
+			// The pill follows the checkbox, and follows it back when the save fails (DeepSeek round 1).
+			function pill( state ) { if ( key !== 'tracking' ) { return; } var p = document.getElementById( 'da-tracking-pill' ); if ( p ) { p.textContent = state ? 'On' : 'Off'; p.className = 'da-pill ' + ( state ? 'is-on' : 'is-off' ); } }
+			pill( on );
 			cb.disabled = true;
 			call( 'settings', 'POST', body ).then( function ( r ) {
 				cb.disabled = false;
-				if ( ! r || ! r.ok || ! r.data ) { cb.checked = ! on; alert( 'The setting could not be saved. Please try again.' ); return; }
-				if ( r.data.settings && typeof r.data.settings[ key ] !== 'undefined' && !! r.data.settings[ key ] !== on ) { cb.checked = !! r.data.settings[ key ]; if ( key !== 'first_party' ) { alert( 'The setting did not stick. Please try again.' ); } }
+				if ( ! r || ! r.ok || ! r.data || r.data.ok === false ) { cb.checked = ! on; pill( ! on ); fail( why( r, 'The setting "' + key + '" could not be saved.' ), 'Analytics settings' ); return; } // a 200 {ok:false} is a failed save too (DeepSeek round 5)
+				if ( r.data.notes && r.data.notes.length ) { fail( r.data.notes.join( ' ' ), 'Analytics settings' ); }
+				if ( r.data.settings && typeof r.data.settings[ key ] !== 'undefined' && !! r.data.settings[ key ] !== on ) { cb.checked = !! r.data.settings[ key ]; pill( cb.checked ); if ( key !== 'first_party' ) { fail( 'The setting "' + key + '" did not stick. Please try again.', 'Analytics settings' ); } }
 				// The server may resolve a switch differently than requested (first_party:
 				// entitlement said no / could not be asked / site not connected) — mirror
 				// the stored value so the UI never shows an ON switch that is really off.
@@ -109,7 +134,7 @@
 					// PHP re-renders the row frozen with the gate strip, not a snapped-back switch.
 					if ( key === 'first_party' ) { window.location.reload(); }
 				}
-			} ).catch( function () { cb.disabled = false; cb.checked = !on; } );
+			} ).catch( function ( e ) { cb.disabled = false; cb.checked = ! on; pill( ! on ); fail( 'The setting "' + key + '" could not be saved (' + ( e && e.message ? e.message : 'request failed' ) + ').', 'Analytics settings' ); } );
 		} );
 	} );
 
@@ -136,11 +161,11 @@
 		// Disconnect: must type DISCONNECT to enable.
 		if ( dDin ) { dDin.addEventListener( 'input', function () { if ( dDyes ) { dDyes.disabled = dDin.value.trim().toUpperCase() !== 'DISCONNECT'; } } ); }
 		if ( dDno ) { dDno.addEventListener( 'click', function () { var dc = document.getElementById( 'da-disc-confirm' ), db = document.getElementById( 'da-disconnect' ), p = document.getElementById( 'da-purge' ); if ( dc ) { dc.style.display = 'none'; } if ( db ) { db.style.display = ''; } if ( p ) { p.checked = false; } if ( dDin ) { dDin.value = ''; } if ( dDyes ) { dDyes.disabled = true; } } ); }
-		if ( dDyes ) { dDyes.addEventListener( 'click', function () { if ( dDin && dDin.value.trim().toUpperCase() !== 'DISCONNECT' ) { return; } var p = document.getElementById( 'da-purge' ); dDyes.disabled = true; call( 'disconnect', 'POST', { purge: !! ( p && p.checked ) } ).then( function ( r ) { if ( ! r || ! r.ok || ! r.data || r.data.ok !== true ) { throw new Error( 'disconnect failed' ); } if ( r.data.remote_unlinked === false ) { alert( 'Disconnected on this site, but the DevDome account server could not be told; the account may still list this site. Remove it at devdome.com or reconnect and disconnect again.' ); } if ( p && p.checked && r.data.purged === false ) { alert( 'The collected data could not be deleted on DevDome. Use Reset analytics after reconnecting, or contact support.' ); } window.location.reload(); } ).catch( function () { dDyes.disabled = false; alert( 'Disconnect failed. Please try again.' ); } ); } ); }
+		if ( dDyes ) { dDyes.addEventListener( 'click', function () { if ( dDin && dDin.value.trim().toUpperCase() !== 'DISCONNECT' ) { return; } var p = document.getElementById( 'da-purge' ); dDyes.disabled = true; call( 'disconnect', 'POST', { confirm: true, purge: !! ( p && p.checked ) } ).then( function ( r ) { if ( ! r || ! r.ok || ! r.data || r.data.ok !== true ) { throw new Error( why( r, 'Disconnect failed.' ) ); } if ( r.data.remote_unlinked === false ) { failAfterReload( 'Disconnected on this site, but the DevDome account server could not be told; the account may still list this site. Remove it at devdome.com or reconnect and disconnect again.', 'Analytics disconnect' ); } if ( p && p.checked && r.data.purged === false ) { failAfterReload( 'The collected data could not be deleted on DevDome. Use Reset analytics after reconnecting, or contact support.', 'Analytics disconnect' ); } window.location.reload(); } ).catch( function ( e ) { dDyes.disabled = false; fail( ( e && e.message ? e.message : 'Disconnect failed.' ) + ' Please try again.', 'Analytics disconnect' ); } ); } ); }
 		// Reset: must type RESET to enable. Purges data, stays connected.
 		var rBtn = document.getElementById( 'da-reset' ), rNo = document.getElementById( 'da-reset-no' ), rYes = document.getElementById( 'da-reset-yes' ), rIn = document.getElementById( 'da-reset-input' );
 		if ( rBtn ) { rBtn.addEventListener( 'click', function () { var rc = document.getElementById( 'da-reset-confirm' ); if ( rc ) { rc.style.display = 'block'; rBtn.style.display = 'none'; } if ( rIn ) { rIn.value = ''; setTimeout( function () { rIn.focus(); }, 0 ); } if ( rYes ) { rYes.disabled = true; } } ); }
 		if ( rIn ) { rIn.addEventListener( 'input', function () { if ( rYes ) { rYes.disabled = rIn.value.trim().toUpperCase() !== 'RESET'; } } ); }
 		if ( rNo ) { rNo.addEventListener( 'click', function () { var rc = document.getElementById( 'da-reset-confirm' ); if ( rc ) { rc.style.display = 'none'; } if ( rBtn ) { rBtn.style.display = ''; } if ( rIn ) { rIn.value = ''; } if ( rYes ) { rYes.disabled = true; } } ); }
-		if ( rYes ) { rYes.addEventListener( 'click', function () { if ( rIn && rIn.value.trim().toUpperCase() !== 'RESET' ) { return; } rYes.disabled = true; call( 'reset', 'POST' ).then( function ( r ) { if ( ! r || ! r.ok || ! r.data || r.data.ok !== true ) { throw new Error( 'reset failed' ); } window.location.reload(); } ).catch( function () { rYes.disabled = false; alert( 'DevDome did not confirm the deletion; the collected data is still there. Try again in a minute.' ); } ); } ); }
+		if ( rYes ) { rYes.addEventListener( 'click', function () { if ( rIn && rIn.value.trim().toUpperCase() !== 'RESET' ) { return; } rYes.disabled = true; call( 'reset', 'POST', { confirm: true } ).then( function ( r ) { if ( ! r || ! r.ok || ! r.data || r.data.ok !== true ) { throw new Error( why( r, 'DevDome did not confirm the deletion; the collected data is still there. Try again in a minute.' ) ); } window.location.reload(); } ).catch( function ( e ) { rYes.disabled = false; fail( e && e.message ? e.message : 'DevDome did not confirm the deletion; the collected data is still there. Try again in a minute.', 'Analytics reset' ); } ); } ); }
 	} )();

@@ -45,6 +45,11 @@ function devdalyt_ability_can() {
 	return current_user_can( 'manage_options' );
 }
 
+/** start-connect, disconnect, reset-data: the shared-identity capability (manage_network on a subdirectory multisite). */
+function devdalyt_ability_can_connect() {
+	return current_user_can( devdalyt_connect_cap() );
+}
+
 /** read / modify / destroy; destructive: false = reads, null = modifies, true = destructive. */
 function devdalyt_ability_meta( $kind, $idempotent = null ) {
 	$map = array(
@@ -149,7 +154,7 @@ function devdalyt_ability_expands_collection( array $body, array $now ) {
 }
 
 function devdalyt_ability_get_status( $input = array() ) {
-	$connected = DEVDALYT_Analytics::is_connected();
+	$connected = DEVDALYT_Analytics::is_connected_cached();
 	return array(
 		'connected'           => $connected,
 		'account_id'          => $connected ? (string) get_option( 'devdcorev1_account_id', '' ) : '',
@@ -172,7 +177,7 @@ function devdalyt_ability_get_stats( $input = array() ) {
 	if ( ! in_array( $days, array( 1, 7, 30 ), true ) ) {
 		$days = 7;
 	}
-	if ( ! DEVDALYT_Analytics::is_connected() ) {
+	if ( ! DEVDALYT_Analytics::is_connected_cached() ) {
 		// Same rule as the REST stats route: an unconnected site never contacts DevDome.
 		return new WP_Error( 'devdalyt_not_connected', __( 'This site is not connected to a DevDome account, so there are no analytics to read. Use start-connect first.', 'devdome-analytics' ) );
 	}
@@ -187,7 +192,7 @@ function devdalyt_ability_get_stats( $input = array() ) {
 function devdalyt_ability_get_settings( $input = array() ) {
 	$s = devdalyt_ability_settings();
 	$s['first_party_auth_failed'] = (bool) get_option( 'devdalyt_fp_auth_failed', false );
-	$s['connected']               = DEVDALYT_Analytics::is_connected();
+	$s['connected']               = DEVDALYT_Analytics::is_connected_cached();
 	return $s;
 }
 
@@ -195,7 +200,7 @@ function devdalyt_ability_test_connection( $input = array() ) {
 	// No calling home before the site was ever connected (review 2026-09-11 round 2, wp.org
 	// Guideline 7): the probe sends the site token and metadata to DevDome. Without a completed
 	// connect, a saved account id or a pressed Connect button there is nothing to test.
-	if ( ! DEVDALYT_Analytics::is_connected()
+	if ( ! DEVDALYT_Analytics::is_connected_cached()
 		&& '' === (string) get_option( 'devdcorev1_account_id', '' )
 		&& ! get_option( 'devdcorev1_connect_started', 0 ) ) {
 		return array( 'ok' => false, 'message' => __( 'This site is not connected to a DevDome account. Connect it first from DevDome Tools.', 'devdome-analytics' ), 'last_event_at' => '', 'connected' => false );
@@ -205,7 +210,7 @@ function devdalyt_ability_test_connection( $input = array() ) {
 		'ok'            => ! empty( $r['ok'] ),
 		'message'       => isset( $r['message'] ) ? (string) $r['message'] : '',
 		'last_event_at' => isset( $r['last_event_at'] ) ? (string) $r['last_event_at'] : '',
-		'connected'     => DEVDALYT_Analytics::is_connected(),
+		'connected'     => DEVDALYT_Analytics::is_connected_cached(),
 	);
 }
 
@@ -230,20 +235,29 @@ function devdalyt_ability_update_settings( $input = array() ) {
 		if ( 'excluded_roles' === $k ) { continue; }
 		$b = DEVDALYT_Rest::to_bool( $v );
 		if ( null === $b ) {
+			/* translators: %s is the setting key. */
 			return new WP_Error( 'devdalyt_invalid_input', sprintf( __( '%s must be true or false.', 'devdome-analytics' ), $k ) );
 		}
 		$body[ $k ] = $b;
 	}
-	if ( ! empty( $body['first_party'] ) && ! DEVDALYT_Analytics::is_connected() ) {
+	if ( ! empty( $body['first_party'] ) && ! DEVDALYT_Analytics::is_connected( false ) ) {
 		return new WP_Error( 'devdalyt_not_connected', __( 'First-party delivery needs a connected DevDome account (Pro and up). Use start-connect first.', 'devdome-analytics' ) );
 	}
 	// Collecting MORE about visitors (a tracker on, a do-not-track rule off, a role no longer excluded) is
 	// a privacy decision the site owner makes, not the agent: confirm: true, like every DevDome ability that
 	// lowers a protection (review 2026-09-11).
 	$more = devdalyt_ability_expands_collection( $body, devdalyt_ability_settings() );
+	// Scheduling the settings for deletion at uninstall is a data decision too (DeepSeek round 5).
+	if ( ! empty( $body['delete_on_uninstall'] ) && empty( devdalyt_ability_settings()['delete_on_uninstall'] ) ) {
+		$ok = devdalyt_ability_confirmed( $input );
+		if ( is_wp_error( $ok ) ) {
+			return new WP_Error( 'devdalyt_confirm_required', __( 'delete_on_uninstall removes every setting when the plugin is uninstalled. Pass confirm: true after the user agreed.', 'devdome-analytics' ) );
+		}
+	}
 	if ( $more ) {
 		$ok = devdalyt_ability_confirmed( $input );
 		if ( is_wp_error( $ok ) ) {
+			/* translators: %s is the comma-separated list of switches being turned on. */
 			return new WP_Error( 'devdalyt_confirm_required', sprintf( __( 'This change collects more visitor data (%s). Pass confirm: true after the user agreed.', 'devdome-analytics' ), implode( ', ', $more ) ) );
 		}
 	}
@@ -253,6 +267,9 @@ function devdalyt_ability_update_settings( $input = array() ) {
 	$now         = isset( $r['settings'] ) && is_array( $r['settings'] ) ? $r['settings'] : devdalyt_ability_settings();
 	$not_applied = isset( $r['not_applied'] ) && is_array( $r['not_applied'] ) ? $r['not_applied'] : array();
 	$out = array( 'updated' => empty( $not_applied ), 'not_applied' => $not_applied, 'settings' => $now );
+	if ( ! empty( $r['notes'] ) && is_array( $r['notes'] ) ) {
+		$out['notes'] = array_values( array_map( 'strval', $r['notes'] ) ); // a partial first-party provision is said to the agent too (Codex round 2)
+	}
 	if ( in_array( 'first_party', $not_applied, true ) ) {
 		$out['note'] = __( 'first_party stayed off: the connected account does not include First-Party Delivery, or DevDome did not answer. Nothing else was blocked.', 'devdome-analytics' );
 	}
@@ -260,12 +277,19 @@ function devdalyt_ability_update_settings( $input = array() ) {
 }
 
 function devdalyt_ability_start_connect( $input = array() ) {
+	$input = is_array( $input ) ? $input : array();
+	$ok    = devdalyt_ability_confirmed( $input ); // the handshake sends the site identity to DevDome: the user says yes first (DeepSeek round 4)
+	if ( is_wp_error( $ok ) ) {
+		return $ok;
+	}
 	if ( DEVDALYT_Analytics::is_connected() ) {
 		return new WP_Error( 'devdalyt_already_connected', __( 'This site is already connected to a DevDome account. Use disconnect first to link a different one.', 'devdome-analytics' ) );
 	}
 	// Exactly what the Connect button does, without the redirect: the user opens the returned link,
 	// approves on devdome.com and is sent back to the plugin screen, which completes the link.
-	update_option( 'devdcorev1_connect_started', time(), false );
+	if ( ! devdalyt_option_write( 'devdcorev1_connect_started', time() ) ) {
+		return new WP_Error( 'devdalyt_connect_failed', __( 'The connect consent could not be stored on this site (database problem), so the connection was not started. Try again.', 'devdome-analytics' ) );
+	}
 	$clean = admin_url( 'admin.php?page=devdome-analytics' );
 	$start = ( new DEVDALYT_API() )->connect_start( $clean );
 	if ( empty( $start['ok'] ) ) {
@@ -292,7 +316,11 @@ function devdalyt_ability_disconnect( $input = array() ) {
 	if ( ! DEVDALYT_Analytics::is_connected() && '' === (string) get_option( 'devdcorev1_account_id', '' ) ) {
 		return new WP_Error( 'devdalyt_not_connected', __( 'This site is not connected to a DevDome account.', 'devdome-analytics' ) );
 	}
-	$r = DEVDALYT_Rest::do_disconnect( ! empty( $input['purge'] ) );
+	$purge = isset( $input['purge'] ) ? DEVDALYT_Rest::to_bool( $input['purge'] ) : false;
+	if ( null === $purge ) {
+		return new WP_Error( 'devdalyt_invalid_input', __( 'purge must be true or false.', 'devdome-analytics' ) ); // "false" as a string never purges (DeepSeek round 1)
+	}
+	$r = DEVDALYT_Rest::do_disconnect( $purge );
 	if ( empty( $r['local_ok'] ) ) {
 		return new WP_Error( 'devdalyt_disconnect_incomplete', __( 'The site could not be fully disconnected: a local setting could not be written. Check the database and try again.', 'devdome-analytics' ) );
 	}
@@ -351,7 +379,17 @@ function devdalyt_register_abilities() {
 	// site token reach an agent from any handler.
 	$guarded = function ( $cb ) {
 		return function ( $input = array() ) use ( $cb ) {
-			$r = call_user_func( $cb, $input );
+			// Guard window (DESIGN.md 24): a query that failed inside the ability makes the answer a
+			// database error, whatever the handler made of the empty read.
+			devdalyt_db_guard_begin();
+			try {
+				$r = call_user_func( $cb, $input );
+				if ( devdalyt_db_guard_active() ) { // even over the handler's own error text (DeepSeek round 7): "not connected" from a failed read is a database error
+					$r = new WP_Error( 'devdalyt_db_error', devdalyt_db_guard_message() );
+				}
+			} finally {
+				devdalyt_db_guard_end();
+			}
 			if ( is_wp_error( $r ) ) {
 				$clean = new WP_Error();
 				foreach ( $r->get_error_codes() as $code ) {
@@ -365,6 +403,7 @@ function devdalyt_register_abilities() {
 		};
 	};
 	$reg = function ( $id, $label, $desc, $in, $out, $cb, $kind, $idempotent = null ) use ( $guarded ) {
+		$conn = in_array( $id, array( 'devdome-analytics/start-connect', 'devdome-analytics/disconnect', 'devdome-analytics/reset-data' ), true );
 		wp_register_ability( $id, array(
 			'label'               => $label,
 			'description'         => $desc,
@@ -372,7 +411,7 @@ function devdalyt_register_abilities() {
 			'input_schema'        => $in,
 			'output_schema'       => $out,
 			'execute_callback'    => $guarded( $cb ),
-			'permission_callback' => 'devdalyt_ability_can',
+			'permission_callback' => $conn ? 'devdalyt_ability_can_connect' : 'devdalyt_ability_can',
 			'meta'                => devdalyt_ability_meta( $kind, $idempotent ),
 		) );
 	};
@@ -405,17 +444,17 @@ function devdalyt_register_abilities() {
 	$reg( 'devdome-analytics/test-connection', __( 'Test the DevDome connection', 'devdome-analytics' ),
 		__( 'Ask the DevDome service whether this site is linked and reachable (the Test connection button): ok, the service message and the time of the last event received. Makes one request to analytics.devdome.com and records the result; changes no setting.', 'devdome-analytics' ),
 		$empty, array( 'type' => 'object', 'properties' => array( 'ok' => $bool( '' ), 'message' => array( 'type' => 'string' ), 'last_event_at' => array( 'type' => 'string' ), 'connected' => $bool( '' ) ) ),
-		'devdalyt_ability_test_connection', 'modify', true );
+		'devdalyt_ability_test_connection', 'modify', false ); // every call sends a new probe and stamps the result: not idempotent (DeepSeek round 2)
 
 	$reg( 'devdome-analytics/update-settings', __( 'Update analytics settings', 'devdome-analytics' ),
 		__( 'Change any tracking settings; only the keys you pass change, through the same handler the Settings screen uses. Every value is read back from the database before updated: true is returned; keys that could not be applied are listed in not_applied (first_party stays off unless the connected account includes First-Party Delivery and DevDome answered; excluded_roles keeps only roles that exist on this site). Turning tracking off stops data collection until turned on again. Changes that collect MORE visitor data (turning a tracker on, turning a do-not-track rule off, removing an excluded role) require confirm: true; ask the user first. Same validation as the Settings screen.', 'devdome-analytics' ),
 		array( 'type' => 'object', 'properties' => array_merge( $settings_props, array( 'confirm' => array( 'type' => 'boolean', 'description' => 'Required (true) when the change collects more visitor data: a tracker switched on, a do-not-track rule switched off, a role removed from the exclusions. Ask the user first.' ) ) ), 'additionalProperties' => false ),
-		array( 'type' => 'object', 'properties' => array( 'updated' => $bool( 'true only when every passed key holds the passed value now' ), 'not_applied' => array( 'type' => 'array', 'items' => array( 'type' => 'string' ) ), 'note' => array( 'type' => 'string' ), 'settings' => $settings_out ) ),
+		array( 'type' => 'object', 'properties' => array( 'updated' => $bool( 'true only when every passed key holds the passed value now' ), 'not_applied' => array( 'type' => 'array', 'items' => array( 'type' => 'string' ) ), 'notes' => array( 'type' => 'array', 'items' => array( 'type' => 'string' ), 'description' => 'Warnings about a partial First-Party Delivery provision.' ), 'note' => array( 'type' => 'string' ), 'settings' => $settings_out ) ),
 		'devdalyt_ability_update_settings', 'modify', true );
 
 	$reg( 'devdome-analytics/start-connect', __( 'Start connecting to a DevDome account', 'devdome-analytics' ),
 		__( 'Start the one-click connect (the Connect button): returns a devdome.com link the site owner opens in a browser where they are signed in to DevDome; approving there sends them back to the plugin screen, which completes the link. The link works once for ten minutes; each call creates a new one. Refused when the site is already connected.', 'devdome-analytics' ),
-		$empty, array( 'type' => 'object', 'properties' => array( 'url' => array( 'type' => 'string' ), 'expires_in' => array( 'type' => 'integer' ), 'instructions' => array( 'type' => 'string' ) ) ),
+		array( 'type' => 'object', 'properties' => array( 'confirm' => array( 'type' => 'boolean', 'description' => 'Must be true: starting the connect sends this site\'s identity to DevDome. Ask the user first.' ) ), 'required' => array( 'confirm' ), 'additionalProperties' => false ), array( 'type' => 'object', 'properties' => array( 'url' => array( 'type' => 'string' ), 'expires_in' => array( 'type' => 'integer' ), 'instructions' => array( 'type' => 'string' ) ) ),
 		'devdalyt_ability_start_connect', 'modify', false );
 
 	$reg( 'devdome-analytics/disconnect', __( 'Disconnect from the DevDome account', 'devdome-analytics' ),

@@ -32,7 +32,8 @@ if (!function_exists('devdcorev1_uninstall_cleanup')) {
         }
 
         // Last one out — remove the shared-core artifacts.
-        wp_clear_scheduled_hook('devdcorev1_refresh_feeds');
+        wp_unschedule_hook('devdcorev1_refresh_feeds'); // argument-independent (DeepSeek core round 1)
+        delete_site_transient('devdcorev1_hub_catalog_remote'); // the 12 h remote catalog is a SITE transient, outside the sweep below
         delete_option('devdcorev1_feeds');
         delete_transient('devdcorev1_feed_init');
 

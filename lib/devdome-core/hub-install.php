@@ -153,7 +153,7 @@ if (!function_exists('devdcorev1_hub_install_notice')) {
             $name = 'DevDome ' . $name; // the same display name the plugin rows use
         }
 
-        if ($res === 'activated') {
+        if ($res === 'activated' || $res === 'active') {
             return '<div class="dd-hub-connect" data-ddnotice="1" style="border-color:#a7f3d0;background:#ecfdf5;"><span class="dashicons dashicons-yes-alt" style="color:#059669;"></span><div class="dd-hub-connect-body"><strong>' . esc_html($name) . ' is active.</strong></div></div>';
         }
         if ($res === 'installed') {

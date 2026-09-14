@@ -20,7 +20,7 @@ class DEVDALYT_Admin {
 	 * build_state(), where every get_option() key is a literal at its call site.
 	 */
 	const SWITCHES = array(
-		array( 'tracking', 'Enable Tracking', 'Master switch. Sends pageviews to DevDome to power your dashboard.', 'Off means no pageview leaves the site and the dashboard stops updating. Only anonymous page, referrer, country, device and browser data is sent, never names, emails or full IP addresses.' ),
+		array( 'tracking', 'Enable Tracking', 'Master switch. Sends pageviews to DevDome to power your dashboard.', 'Off means no pageview leaves the site and the dashboard stops updating. Only anonymous page, referrer, country, device and browser data is sent, never names or emails. A visitor IP address travels only when your own server relays an event (outbound clicks, First-Party Delivery), so location and per-visitor counts stay correct; the plugin never stores it.' ),
 		array( 'clicks', 'Track Clicks', 'Record clicks on the page.', 'Every click on a link or button is counted per page, so you can see which elements get used. Only the element and the page are sent, nothing personal.' ),
 		array( 'outbound', 'Track Outbound Links', 'Record clicks that leave your site.', 'Clicks on links to other sites are recorded with their destination, which powers the exit links report. Off means the outbound click numbers stay empty.' ),
 		array( 'ai', 'Track AI Referrals', 'Detect visits referred by AI assistants (ChatGPT, Perplexity, …).', 'Visits arriving from ChatGPT, Perplexity, Claude, Gemini and similar assistants are labelled as AI referrals, so you can see how much traffic AI answers bring you.' ),
@@ -53,14 +53,19 @@ class DEVDALYT_Admin {
 	 * only the opaque handle.
 	 */
 	public function handle_connect_go() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( devdalyt_connect_cap() ) ) {
 			wp_die( esc_html__( 'You are not allowed to do that.', 'devdome-analytics' ) );
 		}
 		check_admin_referer( 'devdalyt_connect_go' );
-		// Suite-shared consent stamp: this click is the explicit opt-in that first allows the
-		// shared hub's account check (devdcorev1_connection_state) to verify remotely.
-		update_option( 'devdcorev1_connect_started', time(), false );
+		devdalyt_db_guard_begin(); // window (DESIGN.md 24); the handler always exits by redirect
 		$clean = admin_url( 'admin.php?page=devdome-analytics' );
+		// Suite-shared consent stamp: this click is the explicit opt-in that first allows the
+		// shared hub's account check (devdcorev1_connection_state) to verify remotely. Proved
+		// (DESIGN.md 24.5): a stamp that did not land means no remote check would ever run.
+		if ( ! devdalyt_option_write( 'devdcorev1_connect_started', time() ) ) {
+			wp_safe_redirect( add_query_arg( array( 'dd_error' => 'start', 'dd_why' => rawurlencode( substr( devdalyt_db_guard_message(), 0, 200 ) ) ), $clean ) );
+			exit;
+		}
 		$start = ( new DEVDALYT_API() )->connect_start( $clean );
 		if ( empty( $start['ok'] ) ) {
 			wp_safe_redirect( add_query_arg( 'dd_error', 'start', $clean ) );
@@ -102,6 +107,9 @@ class DEVDALYT_Admin {
 		$js   = DEVDALYT_DIR . 'assets/da-admin.js';
 		$jver = file_exists( $js ) ? (string) filemtime( $js ) : DEVDALYT_VERSION;
 		wp_enqueue_script( 'devdalyt-admin', DEVDALYT_URL . 'assets/da-admin.js', array(), $jver, true );
+		if ( function_exists( 'devdcorev1_error_report_assets' ) ) {
+			devdcorev1_error_report_assets(); // "Report this error" on error banners and failed actions (core 1.7.0)
+		}
 
 		// Page-scoped tweaks on top of the shared stylesheet (kept out of the markup —
 		// no inline <style> blocks on the screen). The built bundle here predates the
@@ -158,7 +166,7 @@ class DEVDALYT_Admin {
 				'bots'                => (bool) get_option( 'devdalyt_bot_tracking_enabled', true ),
 				'dnt_admins'          => (bool) get_option( 'devdalyt_dnt_admins', true ),
 				'dnt'                 => (bool) get_option( 'devdalyt_respect_dnt', true ),
-				'returning'           => (bool) get_option( 'devdalyt_returning_visitors', true ),
+				'returning'           => (bool) get_option( 'devdalyt_returning_visitors', false ), // a missing row is cookieless, like the copy says (DeepSeek round 5)
 				'first_party'         => (bool) get_option( 'devdalyt_first_party', false ),
 				// Advisory only: drives the "included in Pro and up" note next to the switch.
 				// fp_entitlement_cached() never touches the network — the old call fell through
@@ -190,7 +198,36 @@ class DEVDALYT_Admin {
 	private static function maybe_sync_remote_connection() {
 		$site  = (string) get_option( 'devdcorev1_site_id', '' );
 		$token = (string) get_option( 'devdcorev1_site_token', '' );
-		if ( '' === $site || '' === $token || false !== get_transient( 'devdalyt_remote_state_sync' ) ) {
+		if ( '' === $site || '' === $token ) {
+			return;
+		}
+		// The sync ADOPTS or FLIPS the shared identity: only who may connect/disconnect may trigger it
+		// (manage_network on a subdirectory multisite; DeepSeek round 3). The hub-reconnect lift below is
+		// such a change too (DeepSeek round 6), so the check comes first. Others just see the stored state.
+		if ( ! current_user_can( devdalyt_connect_cap() ) ) {
+			return;
+		}
+		// A hub reconnect (the shared DevDome screen) is an explicit connect too: the core stamps
+		// devdcorev1_connected_at then. A stamp NEWER than this plugin's own Disconnect clears the
+		// stop markers, so the hub and this screen cannot disagree for good (Codex round 2).
+		$stopped = get_option( 'devdalyt_user_disconnected', false );
+		$stamp   = strtotime( (string) get_option( 'devdcorev1_connected_at', '' ) );
+		if ( $stopped && is_numeric( $stopped ) && $stamp && $stamp > (int) $stopped && '' !== (string) get_option( 'devdcorev1_account_id', '' ) ) {
+			// Every delete proved, in order; a lift that stops half way is retried on the next admin load (DeepSeek round 5).
+			if ( devdalyt_option_delete( 'devdalyt_user_disconnected' )
+				&& devdalyt_option_delete( 'devdalyt_remote_disconnected' )
+				&& devdalyt_option_delete( 'devdcorev1_conn_state' ) ) { // a stale negative verdict would keep is_connected() false (DeepSeek round 3)
+				delete_transient( 'devdcorev1_conn_checked' );
+				DEVDALYT_Rest::purge_page_caches();
+			}
+		}
+		// No call home before consent (wp.org guideline 7, Codex round 2): a never-connected site has an
+		// auto-provisioned token, and its mere presence is not consent. Only after the owner pressed Connect
+		// (devdcorev1_connect_started), a completed connect (account id) or a live connection does the screen ask.
+		if ( '' === (string) get_option( 'devdcorev1_account_id', '' ) && '' === (string) get_option( 'devdcorev1_connect_started', '' ) && '' === (string) get_option( 'devdcorev1_connected_at', '' ) ) {
+			return;
+		}
+		if ( false !== get_transient( 'devdalyt_remote_state_sync' ) ) {
 			return;
 		}
 		set_transient( 'devdalyt_remote_state_sync', 1, 15 * MINUTE_IN_SECONDS );
@@ -208,13 +245,32 @@ class DEVDALYT_Admin {
 		}
 		$code = (int) wp_remote_retrieve_response_code( $r );
 		$b    = json_decode( (string) wp_remote_retrieve_body( $r ), true );
-		if ( 200 === $code && is_array( $b ) && ! empty( $b['ok'] ) ) {
-			delete_option( 'devdalyt_remote_disconnected' );
-			if ( ! $connected && ! empty( $b['account_id'] ) && preg_match( '/^DD\d{8}$/', (string) $b['account_id'] ) ) {
-				update_option( 'devdcorev1_account_id', (string) $b['account_id'] );
-				update_option( 'devdcorev1_connected_at', gmdate( 'c' ) );
-				delete_option( 'devdalyt_user_disconnected' );
-				DEVDALYT_Rest::purge_page_caches(); // cached HTML must start carrying the tracker
+		if ( 200 === $code && is_array( $b ) && true === $b['ok'] ) { // strict: {"ok":"false"} is not ok (DeepSeek round 5)
+			$adopt = ! $connected && ! empty( $b['account_id'] ) && preg_match( '/^DD\d{8}$/', (string) $b['account_id'] );
+			if ( ! $adopt ) {
+				devdalyt_option_delete( 'devdalyt_remote_disconnected' ); // the service says connected and nothing changes locally
+				return;
+			}
+			// An adoption keeps an EXISTING stop marker in place (Codex round 5): dropping it first and failing to
+			// re-raise it made surviving stale identity rows read as connected under the old account.
+			{
+				// Adopt only when both halves landed (DESIGN.md 24.5). The stop marker is raised BEFORE the first
+				// write and lowered only after the last one (Codex round 4): whatever fails in between, the site
+				// stays "not connected" for every reader until a later sync completes the adoption.
+				if ( ! devdalyt_option_write( 'devdalyt_remote_disconnected', 1 ) ) {
+					return; // cannot protect the adoption: do not start it
+				}
+				if ( devdalyt_option_write( 'devdcorev1_account_id', (string) $b['account_id'] ) && devdalyt_option_write( 'devdcorev1_connected_at', gmdate( 'c' ) ) && devdalyt_option_delete( 'devdalyt_user_disconnected' ) ) {
+					// The cached shared verdict outranks the stamp in is_connected(): drop it so the next read re-verifies (DeepSeek round 1).
+					devdalyt_option_delete( 'devdcorev1_conn_state' );
+					delete_transient( 'devdcorev1_conn_checked' );
+					devdalyt_option_delete( 'devdalyt_remote_disconnected' ); // adoption complete only when this lands; else the next sync redoes it
+					DEVDALYT_Rest::purge_page_caches(); // cached HTML must start carrying the tracker
+				} else {
+					devdalyt_db_guard_rebase(); // best-effort tidy past the failed query; the raised marker is what keeps the site honest
+					devdalyt_option_delete( 'devdcorev1_account_id' );
+					devdalyt_option_delete( 'devdcorev1_connected_at' );
+				}
 			}
 			return;
 		}
@@ -222,9 +278,14 @@ class DEVDALYT_Admin {
 		// be flipped locally; legacy hub-state installs keep their old behavior untouched.
 		if ( $connected && ( 401 === $code || 403 === $code )
 			&& '' !== (string) get_option( 'devdcorev1_connected_at', '' ) ) {
-			update_option( 'devdcorev1_connected_at', '' );
-			update_option( 'devdalyt_remote_disconnected', 1 );
-			DEVDALYT_Rest::purge_page_caches(); // stop serving the tracker from cached HTML
+			// Marker first, then the stamp, then the cached verdict, every write proved (DeepSeek round 6): a surviving
+			// "ok" verdict would keep is_connected_cached() true after the stamp went.
+			if ( devdalyt_option_write( 'devdalyt_remote_disconnected', 1 )
+				&& devdalyt_option_write( 'devdcorev1_connected_at', '' )
+				&& devdalyt_option_delete( 'devdcorev1_conn_state' ) ) { // a cached "ok" verdict would keep painting Connected for up to 12 hours (DeepSeek round 1)
+				delete_transient( 'devdcorev1_conn_checked' );
+				DEVDALYT_Rest::purge_page_caches(); // stop serving the tracker from cached HTML
+			}
 		}
 	}
 
@@ -232,17 +293,21 @@ class DEVDALYT_Admin {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_die( esc_html__( 'You are not allowed to view this page.', 'devdome-analytics' ) );
 		}
+		// The page is built inside a guard window and buffered (DESIGN.md 24): a query that failed
+		// while it was built gets a red banner on top instead of a screen that quietly shows defaults.
+		devdalyt_db_guard_begin();
+		ob_start();
 
 		self::maybe_sync_remote_connection();
 		// Entitlement freshness on its own short gate: a plan change (upgrade OR downgrade)
 		// must show on the First-Party row within minutes, not the 15-min connection cadence
 		// or the day-long verdict cache. One cheap GET, admins-only, this screen only;
 		// fp_entitlement() makes no request at all while the site is unconnected.
-		if ( false === get_transient( 'devdalyt_fp_ent_sync' ) ) {
+		$connected   = DEVDALYT_Analytics::is_connected();
+		if ( $connected && false === get_transient( 'devdalyt_fp_ent_sync' ) ) { // never before a connection exists (Codex round 2)
 			set_transient( 'devdalyt_fp_ent_sync', 1, 2 * MINUTE_IN_SECONDS );
 			DEVDALYT_Tracker::fp_entitlement( true );
 		}
-		$connected   = DEVDALYT_Analytics::is_connected();
 		$account_id  = (string) get_option( 'devdcorev1_account_id', '' );
 		$dashboard   = (string) get_option( 'devdalyt_dashboard_url', DEVDALYT_DEFAULT_DASHBOARD_URL );
 		$account_url = defined( 'DEVDALYT_DEFAULT_ACCOUNT_URL' ) ? DEVDALYT_DEFAULT_ACCOUNT_URL : 'https://devdome.com';
@@ -253,13 +318,13 @@ class DEVDALYT_Admin {
 		// The handshake starts only in handle_connect_go(), after the user presses the consent
 		// button below — the form posts to admin-post.php, which registers the request and
 		// forwards the browser with only an opaque token.
-		$oauth_error = isset( $_GET['dd_error'] ) ? sanitize_text_field( wp_unslash( $_GET['dd_error'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display-only flag set by our own redirect
-		$oauth_why   = isset( $_GET['dd_why'] ) ? sanitize_text_field( wp_unslash( $_GET['dd_why'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display-only detail from our own redirect
-		$oauth_retry = isset( $_GET['dd_retry'] ) ? sanitize_key( wp_unslash( $_GET['dd_retry'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- request token of the kept handshake
+		$oauth_error = isset( $_GET['dd_error'] ) && is_string( $_GET['dd_error'] ) ? sanitize_text_field( wp_unslash( $_GET['dd_error'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display-only flag set by our own redirect
+		$oauth_why   = isset( $_GET['dd_why'] ) && is_string( $_GET['dd_why'] ) ? sanitize_text_field( wp_unslash( $_GET['dd_why'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display-only detail from our own redirect
+		$oauth_retry = isset( $_GET['dd_retry'] ) && is_string( $_GET['dd_retry'] ) ? sanitize_text_field( wp_unslash( $_GET['dd_retry'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- request token of the kept handshake
 		$oauth_retry_url = '' !== $oauth_retry ? add_query_arg( array( 'page' => 'devdome-analytics', 'dd_connect' => 1, 'rt' => $oauth_retry ), admin_url( 'admin.php' ) ) : '';
 
 		// ?tab= picks the initial active panel (hash + client-side switching take over after load).
-		$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'overview'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display-only tab selector
+		$tab = isset( $_GET['tab'] ) && is_string( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'overview'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display-only tab selector
 		if ( ! in_array( $tab, array( 'overview', 'settings' ), true ) ) {
 			$tab = 'overview';
 		}
@@ -284,7 +349,7 @@ class DEVDALYT_Admin {
 		);
 		?>
 		<div class="dd-app min-h-screen bg-gray-50 text-[#3c434a] font-sans text-[13px]"
-		     id="da-app" data-rest="<?php echo esc_attr( $rest ); ?>" data-nonce="<?php echo esc_attr( $nonce ); ?>" data-dashboard="<?php echo esc_attr( $dashboard ); ?>" data-connected="<?php echo $connected ? '1' : '0'; ?>">
+		     id="da-app" data-rest="<?php echo esc_attr( $rest ); ?>" data-nonce="<?php echo esc_attr( $nonce ); ?>" data-dashboard="<?php echo esc_attr( $dashboard ); ?>" data-connected="<?php echo $connected ? '1' : '0'; ?>" data-version="<?php echo esc_attr( DEVDALYT_VERSION ); ?>">
 			<div class="bg-white border-b border-gray-200 shadow-sm" style="position:sticky;top:var(--wp-admin--admin-bar--height,32px);z-index:100;">
 				<div class="max-w-5xl px-6 py-4 flex items-center gap-3">
 					<div class="p-1.5 rounded text-white inline-flex items-center justify-center" style="background:linear-gradient(135deg,#2563eb,#1d4ed8);">
@@ -339,6 +404,7 @@ class DEVDALYT_Admin {
 								?>
 								<?php if ( '' !== $oauth_why ) : ?><br><span style="font-family:ui-monospace,Menlo,monospace;font-size:12px;">Detail: <?php echo esc_html( $oauth_why ); ?></span><?php endif; ?>
 								<?php if ( '' !== $oauth_retry_url ) : ?><br><a href="<?php echo esc_url( $oauth_retry_url ); ?>" style="font-weight:600;">Try again</a><?php endif; ?>
+								<?php if ( function_exists( 'devdcorev1_error_report_button' ) ) : ?><br><?php echo devdcorev1_error_report_button( 'devdome-analytics', DEVDALYT_VERSION, 'Connect failed (' . $oauth_error . ')' . ( '' !== $oauth_why ? ': ' . $oauth_why : '' ), 'Analytics connect' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped by the core helper ?><?php endif; ?>
 							</p>
 							<?php endif; ?>
 
@@ -506,5 +572,14 @@ class DEVDALYT_Admin {
 			</main>
 		</div>
 		<?php
+		$html = (string) ob_get_clean();
+		if ( devdalyt_db_guard_failed() ) {
+			$banner_text = __( 'A database query failed while this page was built, so what it shows may be incomplete or stale. Reload the page; if it keeps happening, check the database with your host.', 'devdome-analytics' );
+			$report_btn  = function_exists( 'devdcorev1_error_report_button' ) ? devdcorev1_error_report_button( 'devdome-analytics', DEVDALYT_VERSION, 'Analytics page built over a failed database query: ' . devdalyt_redact( devdalyt_db_guard_error() ), 'Analytics page' ) : '';
+			$banner      = '<div class="dd-banner" style="margin:16px 24px 0;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#b91c1c;font-size:13px;">' . esc_html( $banner_text ) . $report_btn . '</div>';
+			$html        = preg_replace( '/(<div class="dd-app[^>]*>)/', '$1' . $banner, $html, 1 );
+		}
+		devdalyt_db_guard_end();
+		echo $html; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- the buffered page, escaped where built
 	}
 }

@@ -42,7 +42,7 @@ class DEVDALYT_Bot_Detector {
 	}
 
 	public function maybe_report() {
-		if ( ! DEVDALYT_Analytics::is_connected() ) {
+		if ( ! DEVDALYT_Tracker::is_connected_cheap() ) { // a crawler hit never triggers a remote verify or an identity write (DeepSeek round 2)
 			return;
 		}
 		// The master switch stops EVERY sender, not only the page tag (review 2026-09-11).
@@ -62,7 +62,7 @@ class DEVDALYT_Bot_Detector {
 		// The same privacy controls as the page tag (review 2026-09-11 round 3): a Do Not Track
 		// request, a logged-in administrator under "do not track admins", or an excluded role
 		// must not be reported as a bot visit either.
-		if ( '1' === ( isset( $_SERVER['HTTP_DNT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_DNT'] ) ) : '' )
+		if ( ( '1' === ( isset( $_SERVER['HTTP_DNT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_DNT'] ) ) : '' ) || '1' === ( isset( $_SERVER['HTTP_SEC_GPC'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_SEC_GPC'] ) ) : '' ) ) // Global Privacy Control counts like DNT (DeepSeek round 6)
 			&& (bool) get_option( 'devdalyt_respect_dnt', true ) ) {
 			return;
 		}
