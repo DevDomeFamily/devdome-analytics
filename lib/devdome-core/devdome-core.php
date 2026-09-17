@@ -20,7 +20,7 @@ if (defined('DEVDCOREV1_LOADED')) {
     return; // a higher/equal version already loaded the library
 }
 define('DEVDCOREV1_LOADED', true);
-define('DEVDCOREV1_VERSION', '1.7.1');
+define('DEVDCOREV1_VERSION', '1.7.4');
 
 if (!defined('DEVDCOREV1_FEED_ENDPOINT')) {
     define('DEVDCOREV1_FEED_ENDPOINT', 'https://api.devdome.com/bot-protection');
@@ -257,10 +257,39 @@ if (!function_exists('devdcorev1_get_feeds')) {
         if (!has_action('devdcorev1_beacon')) {
             return; // no listener on this site — never expose a useless public endpoint
         }
+        if (!apply_filters('devdcorev1_beacon_enabled', true)) {
+            return; // same switch as the script enqueue
+        }
+        $flag = array(
+            'type'              => 'integer',
+            'default'           => 0,
+            'sanitize_callback' => 'absint',
+            'validate_callback' => static function ($v) { return in_array((string) $v, array('0', '1', ''), true) || true === $v || false === $v; },
+        );
         register_rest_route('devdome-core/v1', '/beacon', array(
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => 'devdcorev1_beacon_receive',
-            'permission_callback' => '__return_true', // anonymous; rate-limited + sanitized below
+            // Intentionally public: an anonymous front-end visitor beacon, not an administrative
+            // command (nothing is read back; core stores only a short-lived per-IP rate counter).
+            // Registered only when a DevDome plugin subscribes to devdcorev1_beacon; Admin Cleaner
+            // registers no consumer, so on its own this route does not exist. Inputs are
+            // schema-validated here and re-checked in the callback; per-IP flood guard inside.
+            'permission_callback' => '__return_true',
+            'args'                => array(
+                'sid'  => array(
+                    'type'              => 'string',
+                    'required'          => true,
+                    'sanitize_callback' => 'sanitize_text_field',
+                    'validate_callback' => static function ($v) { return is_string($v) && 1 === preg_match('/^[a-f0-9]{16,64}$/D', $v); },
+                ),
+                'path' => array(
+                    'type'              => 'string',
+                    'default'           => '',
+                    'sanitize_callback' => 'sanitize_text_field',
+                    'validate_callback' => static function ($v) { return is_string($v) && strlen($v) <= 2000; },
+                ),
+                'c' => $flag, 's' => $flag, 'm' => $flag, 't' => $flag, 'f' => $flag, 'wd' => $flag,
+            ),
         ));
     }
     add_action('rest_api_init', 'devdcorev1_beacon_rest_init');
@@ -468,6 +497,7 @@ if (!function_exists('devdcorev1_get_feeds')) {
     require_once __DIR__ . '/hub-report.php';
     require_once __DIR__ . '/hub-error-report.php'; // "Report this error" button + admin-ajax sender, core 1.7.0
     require_once __DIR__ . '/abilities.php'; // devdome-tools/get-connection (WP 6.9+ Abilities API), core 1.7.0
+    require_once __DIR__ . '/hub-update-heal.php'; // updates work on root-owned plugin folders, core 1.7.2
     // Absent from the WordPress.org build (.wporg-strip): a wp.org-distributed
     // plugin must never install or activate other plugins on the user's behalf, so the
     // hub links out to the product page instead (hub.php falls back when absent).

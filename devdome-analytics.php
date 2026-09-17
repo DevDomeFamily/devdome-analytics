@@ -3,7 +3,7 @@
  * Plugin Name: DevDome Analytics
  * Plugin URI: https://devdome.com/features/analytics
  * Description: Traffic analytics, visitor statistics and click tracking for WordPress, with AI referral detection and bot-filtered numbers.
- * Version: 1.1.0
+ * Version: 1.1.1
  * Author: DevDome
  * Author URI: https://devdome.com
  * License: GPLv2 or later
@@ -30,7 +30,7 @@ if ( file_exists( __DIR__ . '/wporg-build.php' ) ) {
 	require __DIR__ . '/wporg-build.php';
 }
 
-define( 'DEVDALYT_VERSION', '1.1.0' );
+define( 'DEVDALYT_VERSION', '1.1.1' );
 define( 'DEVDALYT_FILE', __FILE__ );
 define( 'DEVDALYT_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DEVDALYT_URL', plugin_dir_url( __FILE__ ) );
@@ -251,7 +251,7 @@ function devdalyt_seed_landed() {
 	if ( '' === (string) get_option( 'devdcorev1_site_id', '' ) || strlen( (string) get_option( 'devdcorev1_site_token', '' ) ) < 20 ) {
 		return false; // identity not provisioned = the site cannot connect; keep the activation path open
 	}
-	return ! get_option( 'devdalyt_init_pending', false ); // fresh-install defaults still owed (see the activation hook)
+	return 1 !== (int) get_option( 'devdalyt_init_pending', 0 ); // 1 = fresh-install defaults still owed; 2 = landed (the marker outlives the version write, Codex round 10)
 }
 
 /** The fresh-install defaults, proved; shared by activation and the retry on admin_init (Codex round 3). @return bool both landed. */
@@ -276,14 +276,22 @@ function devdalyt_provision_identity() {
 }
 
 add_action( 'admin_init', function () {
+	// First-party delivery without its daily refresh (a wp_schedule_event that failed at activation) would serve a stale
+	// tracker copy after every plugin update: re-provision until the schedule exists (DeepSeek round 9).
+	if ( get_option( 'devdalyt_first_party', false ) && ! wp_next_scheduled( 'devdalyt_fp_refresh' ) && class_exists( 'DEVDALYT_Tracker' ) && DEVDALYT_Tracker::is_connected_cheap() ) {
+		DEVDALYT_Tracker::fp_provision();
+	}
 	if ( get_option( 'devdalyt_plugin_version' ) !== DEVDALYT_VERSION ) {
 		// No version row = this site meets the plugin for the FIRST time here (a network subsite never runs the
 		// activation hook; Codex round 4): it gets the fresh privacy defaults exactly like an activation.
 		$fresh = ( null === get_option( 'devdalyt_plugin_version', null ) );
 		devdalyt_seed_options();
-		if ( $fresh && ! get_option( 'devdalyt_init_pending', false ) && ! devdalyt_fresh_defaults() ) {
-			if ( ! devdalyt_option_write( 'devdalyt_init_pending', 1 ) ) {
-				return; // neither the defaults nor the marker landed: no version row this load, the next one retries (DeepSeek round 6)
+		if ( $fresh && ! get_option( 'devdalyt_init_pending', false ) ) {
+			// The marker is written BEFORE the identity is provisioned, 2 when the defaults landed and 1 when they did not:
+			// without it a failed identity write left the site "fresh" and the defaults were rewritten over the owner's
+			// later choices on every admin load (Codex round 9).
+			if ( ! devdalyt_option_write( 'devdalyt_init_pending', devdalyt_fresh_defaults() ? 2 : 1 ) ) {
+				return; // the marker did not land: no version row this load, the next one retries (DeepSeek round 6)
 			}
 		}
 		// Activation could not prove its writes (Codex round 3): redo the fresh-install defaults and the identity
@@ -297,16 +305,23 @@ add_action( 'admin_init', function () {
 				$pending = 2;
 			}
 		}
-		if ( 2 === $pending && ( ! devdalyt_provision_identity() || ! devdalyt_option_delete( 'devdalyt_init_pending' ) ) ) {
-			return; // identity or marker still owed: no version row this load either; the next one retries without touching the defaults
+		if ( 1 === $pending ) {
+			return; // the fresh privacy defaults are still owed: no identity (the site must not become connectable first), no version row (DeepSeek round 11)
+		}
+		if ( 2 === $pending && ! devdalyt_provision_identity() ) {
+			return; // identity still owed: no version row this load either; the next one retries without touching the defaults
 		}
 		devdalyt_provision_identity();
 		// DevDome-managed service URLs are not user-editable — re-sync to current defaults on upgrade
 		// (everything lives on analytics.devdome.com since 2026-06-10). The version row is written LAST and only
 		// when every default and URL landed, so a lost write is retried on the next admin load instead of masked.
-		if ( devdalyt_sync_service_urls() && devdalyt_seed_landed() ) {
-			devdalyt_option_write( 'devdalyt_plugin_version', DEVDALYT_VERSION );
+		// The marker goes only AFTER the version row landed (Codex round 10): while it is 2, a failed URL or version
+		// write never makes the site "fresh" again, so the defaults are never rewritten over the owner's choices.
+		if ( devdalyt_sync_service_urls() && devdalyt_seed_landed() && devdalyt_option_write( 'devdalyt_plugin_version', DEVDALYT_VERSION ) && $pending ) {
+			devdalyt_option_delete( 'devdalyt_init_pending' );
 		}
+	} elseif ( get_option( 'devdalyt_init_pending', false ) ) {
+		devdalyt_option_delete( 'devdalyt_init_pending' ); // the version row landed on an earlier load, only the marker's delete is owed
 	}
 } );
 
@@ -317,17 +332,19 @@ register_activation_hook( __FILE__, function () {
 	devdalyt_seed_options();
 	$landed = true;
 	if ( $fresh ) {
-		$landed = devdalyt_fresh_defaults();
-		if ( ! $landed ) {
-			devdalyt_option_write( 'devdalyt_init_pending', 1 ); // the admin_init path redoes them with the intended values (Codex round 3)
-		}
+		// Defaults already proved by an earlier, unfinished attempt (marker 2) are KEPT: a re-activation must not rewrite
+		// the roles or cookie choices made since (Codex round 11).
+		$landed = 2 === (int) get_option( 'devdalyt_init_pending', 0 ) || devdalyt_fresh_defaults();
+		// 2 = defaults landed, identity owed; 1 = defaults owed. Written BEFORE the identity so a failed identity write
+		// never re-runs the defaults over the owner's later choices (Codex round 9; the admin_init path finishes it).
+		$landed = devdalyt_option_write( 'devdalyt_init_pending', $landed ? 2 : 1 ) && $landed;
 	}
 	// Auto-provision this site's identity so connecting is one click (no pasting):
 	// site_id is the domain, site_token is a random secret kept server-side only.
 	// Both are suite-shared (devdcorev1_*) — one connect covers every DevDome plugin.
 	// Proved (DeepSeek round 2): a token that did not land leaves the connect proof empty and the site unable to connect;
 	// the version gate below then keeps the activation path open for the next admin load.
-	$landed = devdalyt_provision_identity() && $landed;
+	$landed = $landed && devdalyt_provision_identity(); // no identity while the fresh defaults are owed (DeepSeek round 11): the connect proof stays empty until they landed
 	// Deactivation clears the daily first-party refresh; a re-activation with the feature still on must bring it
 	// back, or the local tracker copy never refreshes again (Codex round 8). fp_provision() schedules only while
 	// the site is connected and the feature is on, and proves its writes.
@@ -338,8 +355,8 @@ register_activation_hook( __FILE__, function () {
 	// upgrade from older endpoints (e.g. the testing host) always points at production.
 	// The version row lands LAST and only when every default landed (DeepSeek round 1): otherwise the
 	// admin_init upgrade path re-seeds on the next load instead of leaving a fresh site half-configured.
-	if ( devdalyt_sync_service_urls() && $landed && devdalyt_seed_landed() ) {
-		devdalyt_option_write( 'devdalyt_plugin_version', DEVDALYT_VERSION );
+	if ( devdalyt_sync_service_urls() && $landed && devdalyt_seed_landed() && devdalyt_option_write( 'devdalyt_plugin_version', DEVDALYT_VERSION ) && $fresh ) {
+		devdalyt_option_delete( 'devdalyt_init_pending' ); // after the version row (Codex round 10); a lost delete is redone by admin_init
 	}
 	// Bot detection must work from the first request: fetch the shared devdome-core
 	// feed synchronously now instead of waiting for cron (which may be disabled).

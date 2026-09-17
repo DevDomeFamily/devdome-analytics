@@ -226,8 +226,8 @@ function devdalyt_ability_update_settings( $input = array() ) {
 	if ( ! $body ) {
 		return array( 'updated' => false, 'not_applied' => array(), 'settings' => devdalyt_ability_settings() );
 	}
-	if ( isset( $body['excluded_roles'] ) && ! is_array( $body['excluded_roles'] ) ) {
-		return new WP_Error( 'devdalyt_invalid_input', __( 'excluded_roles must be a list of role slugs.', 'devdome-analytics' ) );
+	if ( isset( $body['excluded_roles'] ) && ( ! is_array( $body['excluded_roles'] ) || count( array_filter( $body['excluded_roles'], 'is_string' ) ) !== count( $body['excluded_roles'] ) ) ) {
+		return new WP_Error( 'devdalyt_invalid_input', __( 'excluded_roles must be a list of role slugs.', 'devdome-analytics' ) ); // strings only: sanitize_key on an array would be a TypeError (DeepSeek round 10)
 	}
 	// Strict booleans BEFORE the confirm logic (review 2026-09-11 round 2): the string "false" used
 	// to count as "turn on" and even pass the "collects more" gate. Refused with the key named.
@@ -442,13 +442,13 @@ function devdalyt_register_abilities() {
 		'devdalyt_ability_get_settings', 'read' );
 
 	$reg( 'devdome-analytics/test-connection', __( 'Test the DevDome connection', 'devdome-analytics' ),
-		__( 'Ask the DevDome service whether this site is linked and reachable (the Test connection button): ok, the service message and the time of the last event received. Makes one request to analytics.devdome.com and records the result; changes no setting.', 'devdome-analytics' ),
+		__( 'Ask the DevDome service whether this site is linked and reachable (the Test connection button): ok, the service message and the time of the last event received. Makes one request to analytics.devdome.com and records when it ran and, when the service reports one, the time of the last event; changes no tracking setting.', 'devdome-analytics' ),
 		$empty, array( 'type' => 'object', 'properties' => array( 'ok' => $bool( '' ), 'message' => array( 'type' => 'string' ), 'last_event_at' => array( 'type' => 'string' ), 'connected' => $bool( '' ) ) ),
 		'devdalyt_ability_test_connection', 'modify', false ); // every call sends a new probe and stamps the result: not idempotent (DeepSeek round 2)
 
 	$reg( 'devdome-analytics/update-settings', __( 'Update analytics settings', 'devdome-analytics' ),
 		__( 'Change any tracking settings; only the keys you pass change, through the same handler the Settings screen uses. Every value is read back from the database before updated: true is returned; keys that could not be applied are listed in not_applied (first_party stays off unless the connected account includes First-Party Delivery and DevDome answered; excluded_roles keeps only roles that exist on this site). Turning tracking off stops data collection until turned on again. Changes that collect MORE visitor data (turning a tracker on, turning a do-not-track rule off, removing an excluded role) require confirm: true; ask the user first. Same validation as the Settings screen.', 'devdome-analytics' ),
-		array( 'type' => 'object', 'properties' => array_merge( $settings_props, array( 'confirm' => array( 'type' => 'boolean', 'description' => 'Required (true) when the change collects more visitor data: a tracker switched on, a do-not-track rule switched off, a role removed from the exclusions. Ask the user first.' ) ) ), 'additionalProperties' => false ),
+		array( 'type' => 'object', 'properties' => array_merge( $settings_props, array( 'confirm' => array( 'type' => 'boolean', 'description' => 'Required (true) when delete_on_uninstall is switched on, and when the change collects more visitor data: a tracker switched on, a do-not-track rule switched off, a role removed from the exclusions. Ask the user first.' ) ) ), 'additionalProperties' => false ),
 		array( 'type' => 'object', 'properties' => array( 'updated' => $bool( 'true only when every passed key holds the passed value now' ), 'not_applied' => array( 'type' => 'array', 'items' => array( 'type' => 'string' ) ), 'notes' => array( 'type' => 'array', 'items' => array( 'type' => 'string' ), 'description' => 'Warnings about a partial First-Party Delivery provision.' ), 'note' => array( 'type' => 'string' ), 'settings' => $settings_out ) ),
 		'devdalyt_ability_update_settings', 'modify', true );
 

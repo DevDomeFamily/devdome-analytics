@@ -452,6 +452,9 @@ class DEVDALYT_Tracker {
 		}
 		$base = (string) get_option( 'devdalyt_status_endpoint', DEVDALYT_DEFAULT_STATUS_ENDPOINT );
 		$url  = str_replace( '/api/plugin/status', '/api/plugin/entitlements', $base );
+		if ( $url === $base ) {
+			return $out; // no entitlements endpoint could be derived: not answered, never the status route's answer (DeepSeek round 11)
+		}
 		// Token in the Authorization header, never the query string: it is a long-lived secret
 		// and query strings leak into server/proxy logs (the worker route prefers Bearer).
 		$r    = wp_remote_get( add_query_arg( array( 'site' => rawurlencode( $site ) ), $url ), array(
@@ -602,6 +605,7 @@ class DEVDALYT_Tracker {
 		// fp_script_url() then served because "it exists".
 		$tmp = $dst . '.' . substr( md5( uniqid( '', true ) ), 0, 8 ) . '.tmp';
 		if ( ! $wp_filesystem->put_contents( $tmp, $js, FS_CHMOD_FILE ) ) {
+			$wp_filesystem->delete( $tmp ); // a partial temp file never stays behind (DeepSeek round 11)
 			return $wp_filesystem->exists( $dst ) && self::fp_script_url() !== '';
 		}
 		if ( md5( (string) $wp_filesystem->get_contents( $tmp ) ) !== md5( $js ) || ! $wp_filesystem->move( $tmp, $dst, true ) ) {
@@ -642,6 +646,7 @@ class DEVDALYT_Tracker {
 		}
 		$tmp = $dst . '.' . substr( md5( uniqid( '', true ) ), 0, 8 ) . '.tmp';
 		if ( ! $fs->put_contents( $tmp, $js, FS_CHMOD_FILE ) ) {
+			$fs->delete( $tmp );
 			return false;
 		}
 		if ( md5( (string) $fs->get_contents( $tmp ) ) !== md5( $js ) || ! $fs->move( $tmp, $dst, true ) ) {

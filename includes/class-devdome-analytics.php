@@ -112,6 +112,10 @@ class DEVDALYT_Analytics {
 			return; // the shared identity is the network's on a subdirectory multisite (Codex round 1)
 		}
 		devdalyt_db_guard_begin(); // window (DESIGN.md 24); every exit below is a redirect
+		if ( DEVDALYT_Analytics::is_connected( false ) ) {
+			wp_safe_redirect( $clean ); // already linked: a late or second return leg never overwrites the live account (DeepSeek round 11)
+			exit;
+		}
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- see above.
 		$rt    = sanitize_text_field( wp_unslash( $_GET['rt'] ) );
 		// The rt must match a request THIS site started (its single-use nonce is in our transient).

@@ -59,6 +59,10 @@ class DEVDALYT_Admin {
 		check_admin_referer( 'devdalyt_connect_go' );
 		devdalyt_db_guard_begin(); // window (DESIGN.md 24); the handler always exits by redirect
 		$clean = admin_url( 'admin.php?page=devdome-analytics' );
+		if ( DEVDALYT_Analytics::is_connected( false ) ) {
+			wp_safe_redirect( $clean ); // already linked: disconnect first, never relink over a live account (DeepSeek round 10, same as the ability)
+			exit;
+		}
 		// Suite-shared consent stamp: this click is the explicit opt-in that first allows the
 		// shared hub's account check (devdcorev1_connection_state) to verify remotely. Proved
 		// (DESIGN.md 24.5): a stamp that did not land means no remote check would ever run.
@@ -410,11 +414,15 @@ class DEVDALYT_Admin {
 
 							<div data-panel="account">
 								<style>.dd-cgo-btn:hover{background:#1d4ed8 !important;border-color:#1d4ed8 !important;}</style>
+								<?php if ( current_user_can( devdalyt_connect_cap() ) ) : // the server refuses everyone else (DeepSeek round 9) ?>
 								<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin:0;">
 									<input type="hidden" name="action" value="devdalyt_connect_go">
 									<?php wp_nonce_field( 'devdalyt_connect_go' ); ?>
 									<button type="submit" class="dd-cgo-btn" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:14px;font-weight:600;border-radius:8px;padding:10px 20px;text-decoration:none;cursor:pointer;line-height:1;white-space:nowrap;transition:.12s;color:#fff;background:#2563eb;border:1px solid #2563eb;box-shadow:0 4px 10px -3px rgba(37,99,235,.5);">Connect your DevDome account</button>
 								</form>
+								<?php else : ?>
+									<p style="margin:0;font-size:13px;color:#6b7280;"><?php esc_html_e( 'Connecting needs a network administrator on this network.', 'devdome-analytics' ); ?></p>
+								<?php endif; ?>
 								<p class="description" style="margin:12px 0 0;">Opens devdome.com to sign in, then links this site automatically.</p>
 							</div>
 						</div>
@@ -455,8 +463,12 @@ class DEVDALYT_Admin {
 							<p style="margin:0 0 14px;color:#374151;">Account ID: <strong><?php echo esc_html( $account_id ); ?></strong></p>
 							<?php endif; ?>
 							<div id="da-account-connected" style="display:<?php echo $connected ? 'flex' : 'none'; ?>;flex-wrap:wrap;gap:10px;">
+								<?php if ( current_user_can( devdalyt_connect_cap() ) ) : // the REST routes refuse everyone else (DeepSeek round 11) ?>
 								<button type="button" class="dd-btn" id="da-reset" style="order:2;">Reset Analytics</button>
 								<button type="button" class="dd-btn-danger" id="da-disconnect" style="order:1;">Disconnect</button>
+								<?php else : ?>
+								<p style="margin:0;font-size:13px;color:#6b7280;"><?php esc_html_e( 'Disconnecting and resetting need a network administrator on this network.', 'devdome-analytics' ); ?></p>
+								<?php endif; ?>
 								<div id="da-disc-confirm" style="display:none;order:4;flex-basis:100%;width:100%;margin-top:8px;border-top:1px solid #f3f4f6;padding-top:14px;">
 									<label class="dd-opt" style="font-weight:600;"><input type="checkbox" class="dd-check" id="da-purge"> Also delete my data on DevDome</label>
 									<p class="description" style="margin:6px 0 12px;">Your data is kept and you can reconnect anytime. It&rsquo;s auto-deleted after 90 days of inactivity. Tick the box to delete it now (e.g. before removing the site for good).</p>
@@ -509,11 +521,15 @@ class DEVDALYT_Admin {
 										<td colspan="2" style="padding:20px 0 16px;">
 											<style>.dd-cgo-btn:hover{background:#1d4ed8 !important;border-color:#1d4ed8 !important;}</style>
 											<div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;">
+												<?php if ( current_user_can( devdalyt_connect_cap() ) ) : // the server refuses everyone else (DeepSeek round 9) ?>
 												<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin:0;">
 													<input type="hidden" name="action" value="devdalyt_connect_go">
 													<?php wp_nonce_field( 'devdalyt_connect_go' ); ?>
 													<button type="submit" class="dd-cgo-btn" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:14px;font-weight:600;border-radius:8px;padding:10px 20px;text-decoration:none;cursor:pointer;line-height:1;white-space:nowrap;transition:.12s;color:#fff;background:#2563eb;border:1px solid #2563eb;box-shadow:0 4px 10px -3px rgba(37,99,235,.5);"><?php esc_html_e( 'Connect your DevDome account', 'devdome-analytics' ); ?></button>
 												</form>
+												<?php else : ?>
+													<p style="margin:0;font-size:13px;color:#6b7280;"><?php esc_html_e( 'Connecting needs a network administrator on this network.', 'devdome-analytics' ); ?></p>
+												<?php endif; ?>
 												<span style="font-size:13px;color:#6b7280;"><?php esc_html_e( 'Requires a DevDome account.', 'devdome-analytics' ); ?></span>
 											</div>
 										</td>

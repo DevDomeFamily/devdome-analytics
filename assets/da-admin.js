@@ -122,7 +122,7 @@
 			cb.disabled = true;
 			call( 'settings', 'POST', body ).then( function ( r ) {
 				cb.disabled = false;
-				if ( ! r || ! r.ok || ! r.data || r.data.ok === false ) { cb.checked = ! on; pill( ! on ); fail( why( r, 'The setting "' + key + '" could not be saved.' ), 'Analytics settings' ); return; } // a 200 {ok:false} is a failed save too (DeepSeek round 5)
+				if ( ! r || ! r.ok || ! r.data || r.data.ok !== true ) { cb.checked = ! on; pill( ! on ); fail( why( r, 'The setting "' + key + '" could not be saved.' ), 'Analytics settings' ); return; } // a 200 {ok:false} is a failed save too (DeepSeek round 5)
 				if ( r.data.notes && r.data.notes.length ) { fail( r.data.notes.join( ' ' ), 'Analytics settings' ); }
 				if ( r.data.settings && typeof r.data.settings[ key ] !== 'undefined' && !! r.data.settings[ key ] !== on ) { cb.checked = !! r.data.settings[ key ]; pill( cb.checked ); if ( key !== 'first_party' ) { fail( 'The setting "' + key + '" did not stick. Please try again.', 'Analytics settings' ); } }
 				// The server may resolve a switch differently than requested (first_party:

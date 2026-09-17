@@ -232,7 +232,7 @@ function devdcorev1_hub_handle_connect_go()
     $tools = admin_url('admin.php?page=' . (defined('DEVDCOREV1_TOOLS_MENU_SLUG') ? DEVDCOREV1_TOOLS_MENU_SLUG : 'devdome-tools'));
     // Optional `return`: the plugin screen the user came from, shown again once the connect
     // completes (1.5.9). Same-site URLs only (wp_validate_redirect); anything else = the hub.
-    $return = isset($_GET['return']) ? wp_validate_redirect(esc_url_raw(wp_unslash($_GET['return'])), '') : '';
+    $return = isset($_GET['return']) && is_string($_GET['return']) ? wp_validate_redirect(esc_url_raw(wp_unslash($_GET['return'])), '') : '';
     // Auto-provision the suite identity so connecting is one click (mirrors the plugins'
     // activation provisioning; covers a suite where no plugin has provisioned it yet).
     $site = (string) get_option('devdcorev1_site_id', '');
@@ -271,7 +271,14 @@ function devdcorev1_hub_handle_connect_go()
     $rt = sanitize_key((string) $data['request_token']);
     // 20 min, not 10: the server gives the request 10 min to be authorized and then a fresh
     // 10 min for the claim, so a slow sign-in must not outlive the local correlation.
-    set_transient('devdcorev1_connrt_' . $rt, (string) $data['nonce'], 20 * MINUTE_IN_SECONDS);
+    // The browser comes back with the opaque request token only. Storing the starting user + a WP
+    // nonce with it binds the completion to the session that pressed Connect (wp.org review
+    // 2026-09-16); the remote nonce authenticates the server-to-server claim.
+    set_transient('devdcorev1_connrt_' . $rt, array(
+        'remote_nonce' => (string) $data['nonce'],
+        'user_id'      => get_current_user_id(),
+        'wp_nonce'     => wp_create_nonce('devdcorev1_connect_complete_' . $rt),
+    ), 20 * MINUTE_IN_SECONDS);
     if ('' !== $return) {
         set_transient('devdcorev1_connret_' . $rt, $return, 20 * MINUTE_IN_SECONDS);
     }
@@ -293,15 +300,20 @@ function devdcorev1_hub_maybe_complete_connect()
         return;
     }
     $slug = defined('DEVDCOREV1_TOOLS_MENU_SLUG') ? DEVDCOREV1_TOOLS_MENU_SLUG : 'devdome-tools';
-    // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- this IS the connect return; the CSRF guard is the single-use transient correlation on `rt`, not a form nonce.
-    if (!isset($_GET['page'], $_GET['dd_connect'], $_GET['rt']) || $slug !== sanitize_key(wp_unslash($_GET['page']))) {
+    // This IS the connect return: the CSRF guard is the single-use `rt` correlation whose stored WP nonce is verified below.
+    if (!isset($_GET['page'], $_GET['dd_connect'], $_GET['rt']) || !is_string($_GET['page']) || !is_string($_GET['rt']) || $slug !== sanitize_key(wp_unslash($_GET['page']))) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- nonce verified below against the rt record
         return;
     }
     $tools = admin_url('admin.php?page=' . (defined('DEVDCOREV1_TOOLS_MENU_SLUG') ? DEVDCOREV1_TOOLS_MENU_SLUG : 'devdome-tools'));
-    // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- see above.
-    $rt    = sanitize_key(wp_unslash($_GET['rt']));
-    $nonce = '' !== $rt ? get_transient('devdcorev1_connrt_' . $rt) : false;
-    if (false === $nonce) {
+    $rt      = sanitize_key(wp_unslash($_GET['rt'])); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- verified on the next lines
+    $pending = '' !== $rt ? get_transient('devdcorev1_connrt_' . $rt) : false;
+    $nonce   = false;
+    if (is_array($pending) && isset($pending['remote_nonce'], $pending['user_id'], $pending['wp_nonce'])
+        && get_current_user_id() === (int) $pending['user_id']
+        && wp_verify_nonce((string) $pending['wp_nonce'], 'devdcorev1_connect_complete_' . $rt)) {
+        $nonce = (string) $pending['remote_nonce'];
+    }
+    if (false === $nonce) { // no record, another user, or a record from an older core: start Connect again
         wp_safe_redirect(add_query_arg('dd_error', 'expired', $tools));
         exit;
     }
@@ -408,8 +420,7 @@ if (!function_exists('devdcorev1_serve_connect_proof')) {
             : '';
         // Query form (core 1.6.6): hosts that answer /.well-known/* from the web server never let
         // this handler run, so the same proof is also served on the home URL with a query flag.
-        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- public one-way hash, no state change.
-        $query_form = isset($_GET['devdome-connect-proof']) && '1' === (string) wp_unslash($_GET['devdome-connect-proof']);
+        $query_form = isset($_GET['devdome-connect-proof']) && is_string($_GET['devdome-connect-proof']) && '1' === sanitize_key(wp_unslash($_GET['devdome-connect-proof'])); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- public one-way hash, no state change.
         if ('/.well-known/devdome-connect-proof.txt' !== $path && !$query_form) {
             return;
         }

@@ -23,13 +23,27 @@ if (!function_exists('devdcorev1_ability_get_connection')) {
     {
         // Read-only (Codex high rounds 3-4): the CACHED state the hub maintains, read as is. No identity
         // reconciliation, no option write, no request to the account server from an agent read.
+        global $wpdb;
+        $wpdb->last_error = '';
         $state   = get_option('devdcorev1_conn_state', array());
+        $failed  = (string) $wpdb->last_error !== ''; // checked per read: the next read clears last_error (Codex full round 13)
+        $wpdb->last_error = '';
+        $token   = (string) get_option('devdcorev1_site_token', '');
+        $failed  = $failed || (string) $wpdb->last_error !== '';
+        if ($failed) { // a failed read is unknown, not "not connected" (Codex full round 12)
+            return new WP_Error('devdcorev1_db_read_failed', 'The connection state could not be read from the database.');
+        }
         $state   = is_array($state) ? $state : array();
-        if ('' === (string) get_option('devdcorev1_site_token', '')) {
+        if ('' === $token) {
             $state = array(); // no token = never connected anywhere in the suite
         }
         $home    = strtolower((string) wp_parse_url(home_url(), PHP_URL_HOST));
-        $stored  = strtolower((string) get_option('devdcorev1_site_id', ''));
+        $wpdb->last_error = '';
+        $site_id = (string) get_option('devdcorev1_site_id', '');
+        if ((string) $wpdb->last_error !== '') { // the identity read is checked too (Codex full round 14)
+            return new WP_Error('devdcorev1_db_read_failed', 'The site identity could not be read from the database.');
+        }
+        $stored  = strtolower($site_id);
         $GLOBALS['devdcorev1_catalog_cached_only'] = true; // cached catalog only: no HTTP, no transient write from a read (Codex high round 13)
         $rows    = function_exists('devdcorev1_hub_registry') ? devdcorev1_hub_registry() : array();
         unset($GLOBALS['devdcorev1_catalog_cached_only']);
@@ -49,7 +63,7 @@ if (!function_exists('devdcorev1_ability_get_connection')) {
             'connected'    => $connected,
             'account_id'   => ($connected && isset($state['account_id'])) ? (string) $state['account_id'] : '',
             'plan'         => ($connected && !empty($state['plan'])) ? (string) $state['plan'] : '',
-            'site_id'      => (string) get_option('devdcorev1_site_id', ''),
+            'site_id'      => $site_id,
             // true when the stored identity is not this site's host (the site moved): the hub resets it on its next load.
             'identity_stale' => (!(function_exists('devdcorev1_shared_identity') && devdcorev1_shared_identity()) && $stored !== '' && $home !== '' && $stored !== $home),
             'core_version' => defined('DEVDCOREV1_VERSION') ? (string) DEVDCOREV1_VERSION : '',

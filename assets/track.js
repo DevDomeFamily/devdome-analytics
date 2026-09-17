@@ -464,13 +464,14 @@
       // drop, which silently loses the click. The navigation is the reliable counter → one row, no dup.
       try {
         var dh = a.getAttribute("href") || "";
-        if (dh.indexOf("/dd-go") !== -1 && dh.indexOf("?") !== -1) {
-          var add = "";
-          if (!/[?&]sid=/.test(dh) && SID && VID) add += "&sid=" + encodeURIComponent(SID) + "&vid=" + encodeURIComponent(VID); // cookieless: no ids at all, never the string "null"
-          if (!/[?&]b=/.test(dh))   add += "&b=" + encodeURIComponent(DEV.browser) + "&o=" + encodeURIComponent(DEV.os) + "&d=" + encodeURIComponent(DEV.device_type);
-          if (navigator.webdriver === true && !/[?&]wd=/.test(dh)) add += "&wd=1";
-          if (ACCOUNT && !/[?&]ac=/.test(dh)) add += "&ac=" + encodeURIComponent(ACCOUNT);
-          if (add) a.setAttribute("href", dh + add);
+        var du = new URL(dh, location.href); // same-origin /dd-go only: never hand the ids to another host (DeepSeek round 9)
+        if (du.origin === location.origin && /^\/dd-go(\/|$)/.test(du.pathname)) {
+          var q = du.searchParams, before = du.href; // parsed: the fields land in the query, never behind a #fragment (DeepSeek round 10)
+          if (!q.has("sid") && SID && VID) { q.set("sid", SID); q.set("vid", VID); } // cookieless: no ids at all, never the string "null"
+          if (!q.has("b")) { q.set("b", DEV.browser); q.set("o", DEV.os); q.set("d", DEV.device_type); }
+          if (navigator.webdriver === true && !q.has("wd")) q.set("wd", "1");
+          if (ACCOUNT && !q.has("ac")) q.set("ac", ACCOUNT);
+          if (du.href !== before) a.setAttribute("href", du.href);
         }
       } catch (_) {}
       return;
@@ -501,7 +502,12 @@
         send("amazon_outbound_click", { asin: asin, target_url: url, via: "click" }, true);
       }
     } else if (!outbound) {
-      if (CLICKS) send("internal_click", { target_url: url, via: "click" });
+      // Same-site target WITHOUT its query string or fragment: a logout nonce, a password-reset key or a
+      // magic-link token must never reach the analytics service (DeepSeek round 10; same rule as the
+      // server-side redirect stitching).
+      var clean = url;
+      try { clean = u.origin + u.pathname; } catch (_) { clean = url.split("#")[0].split("?")[0]; }
+      if (CLICKS) send("internal_click", { target_url: clean, via: "click" });
     }
   }, true);
 

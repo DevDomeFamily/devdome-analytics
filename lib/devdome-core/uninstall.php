@@ -49,6 +49,10 @@ if (!function_exists('devdcorev1_uninstall_cleanup')) {
         }
         global $wpdb;
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- uninstall sweep of this library's own transients.
-        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_devdcorev1\\_%' OR option_name LIKE '\\_transient\\_timeout\\_devdcorev1\\_%'");
+        $wpdb->query($wpdb->prepare(
+            "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+            $wpdb->esc_like('_transient_devdcorev1_') . '%',
+            $wpdb->esc_like('_transient_timeout_devdcorev1_') . '%'
+        ));
     }
 }

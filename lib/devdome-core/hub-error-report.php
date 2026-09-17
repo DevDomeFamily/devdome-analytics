@@ -112,7 +112,7 @@ if (!function_exists('devdcorev1_error_report_handle')) {
             wp_send_json_error('forbidden', 403);
         }
         check_ajax_referer('devdcorev1_error_report', 'nonce');
-        $raw = isset($_POST['context']) ? wp_unslash((string) $_POST['context']) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- decoded and sanitized field by field below
+        $raw = isset($_POST['context']) && is_string($_POST['context']) ? wp_unslash($_POST['context']) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- decoded and sanitized field by field below
         $ctx = json_decode($raw, true);
         $ctx = is_array($ctx) ? $ctx : array();
         $plugin  = sanitize_key(isset($ctx['plugin']) ? (string) $ctx['plugin'] : '');
@@ -161,7 +161,7 @@ if (!function_exists('devdcorev1_error_report_handle')) {
         }
         $code = (int) wp_remote_retrieve_response_code($resp);
         $data = json_decode(wp_remote_retrieve_body($resp), true);
-        if ($code >= 200 && $code < 300 && is_array($data) && !empty($data['ok'])) {
+        if ($code >= 200 && $code < 300 && is_array($data) && isset($data['ok']) && true === $data['ok']) { // strict, like disconnect
             wp_send_json_success(array('sent' => true));
         }
         $why = is_array($data) && !empty($data['error']) ? sanitize_text_field((string) $data['error']) : ('HTTP ' . $code);

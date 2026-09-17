@@ -256,7 +256,7 @@ class DEVDALYT_Rest {
 			if ( ! is_array( $list ) || count( array_filter( $list, 'is_string' ) ) !== count( $list ) ) {
 				$invalid[] = 'excluded_roles';
 			} else {
-				$raw = array_map( 'sanitize_key', $list );
+				$raw = array_unique( array_map( 'sanitize_key', $list ) ); // stored once each (Codex round 10)
 				devdalyt_option_write( 'devdalyt_excluded_roles', array_values( array_intersect( $raw, array_keys( get_editable_roles() ) ) ) );
 			}
 		}
@@ -269,7 +269,7 @@ class DEVDALYT_Rest {
 				continue;
 			}
 			if ( 'excluded_roles' === $k ) {
-				$w = array_values( array_map( 'sanitize_key', (array) $want ) );
+				$w = array_values( array_unique( array_map( 'sanitize_key', (array) $want ) ) ); // stored unique (DeepSeek round 9)
 				sort( $w );
 				$n = $now['excluded_roles'];
 				sort( $n );

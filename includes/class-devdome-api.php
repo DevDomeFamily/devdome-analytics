@@ -20,12 +20,12 @@ class DEVDALYT_API {
 	 * @return bool True only when the service answered 2xx AND {"ok":true} (Codex round 1: a 200 with ok:false is not a purge).
 	 */
 	public function purge() {
-		$endpoint = str_replace( '/plugin/status', '/plugin/purge',
-			(string) get_option( 'devdalyt_status_endpoint', DEVDALYT_DEFAULT_STATUS_ENDPOINT ) );
+		$status   = (string) get_option( 'devdalyt_status_endpoint', DEVDALYT_DEFAULT_STATUS_ENDPOINT );
+		$endpoint = str_replace( '/plugin/status', '/plugin/purge', $status );
 		$site_id  = (string) get_option( 'devdcorev1_site_id', '' );
 		$token    = (string) get_option( 'devdcorev1_site_token', '' );
-		if ( '' === $site_id || '' === $token ) {
-			return false;
+		if ( '' === $site_id || '' === $token || $endpoint === $status ) {
+			return false; // no purge endpoint could be derived: the status endpoint would answer ok:true without deleting anything (DeepSeek round 10)
 		}
 		$resp = wp_remote_post( $endpoint, array(
 			'timeout' => 15,
@@ -49,11 +49,11 @@ class DEVDALYT_API {
 	 * @return array{ok:bool,request_token?:string,nonce?:string,message?:string}
 	 */
 	public function connect_start( $return_url ) {
-		$endpoint = str_replace( '/plugin/status', '/plugin/connect/start',
-			(string) get_option( 'devdalyt_status_endpoint', DEVDALYT_DEFAULT_STATUS_ENDPOINT ) );
+		$status   = (string) get_option( 'devdalyt_status_endpoint', DEVDALYT_DEFAULT_STATUS_ENDPOINT );
+		$endpoint = str_replace( '/plugin/status', '/plugin/connect/start', $status );
 		$site_id  = (string) get_option( 'devdcorev1_site_id', '' );
 		$token    = (string) get_option( 'devdcorev1_site_token', '' );
-		if ( '' === $site_id || '' === $token ) {
+		if ( '' === $site_id || '' === $token || $endpoint === $status ) { // no connect endpoint derivable = never the status route (DeepSeek round 11)
 			return array( 'ok' => false, 'message' => __( 'This site is not initialised yet.', 'devdome-analytics' ) );
 		}
 		$resp = wp_remote_post( $endpoint, array(
@@ -80,11 +80,11 @@ class DEVDALYT_API {
 	 * @return array{ok:bool,account_id?:string,message?:string}
 	 */
 	public function connect_claim( $request_token, $nonce ) {
-		$endpoint = str_replace( '/plugin/status', '/plugin/connect/claim',
-			(string) get_option( 'devdalyt_status_endpoint', DEVDALYT_DEFAULT_STATUS_ENDPOINT ) );
+		$status   = (string) get_option( 'devdalyt_status_endpoint', DEVDALYT_DEFAULT_STATUS_ENDPOINT );
+		$endpoint = str_replace( '/plugin/status', '/plugin/connect/claim', $status );
 		$site_id  = (string) get_option( 'devdcorev1_site_id', '' );
 		$token    = (string) get_option( 'devdcorev1_site_token', '' );
-		if ( '' === $site_id || '' === $token ) {
+		if ( '' === $site_id || '' === $token || $endpoint === $status ) {
 			return array( 'ok' => false, 'message' => __( 'This site is not initialised yet.', 'devdome-analytics' ) );
 		}
 		$resp = wp_remote_post( $endpoint, array(
