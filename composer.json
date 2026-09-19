@@ -1,0 +1,29 @@
+{
+    "name": "devdome/devdome-analytics",
+    "description": "Free cookieless WordPress analytics plugin: real-time visitor stats with humans, bots and AI crawlers counted separately, outbound click tracking, public Stats API and MCP server. Free alternative to Plausible, Fathom, Matomo, MonsterInsights and Google Analytics.",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "homepage": "https://wordpress.org/plugins/devdome-analytics/",
+    "keywords": [
+        "wordpress",
+        "wordpress-plugin",
+        "analytics",
+        "cookieless",
+        "privacy",
+        "bot-detection"
+    ],
+    "authors": [
+        {
+            "name": "DevDome",
+            "homepage": "https://devdome.com"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/DevDomeFamily/devdome-analytics/issues",
+        "source": "https://github.com/DevDomeFamily/devdome-analytics"
+    },
+    "require": {
+        "php": ">=7.4",
+        "composer/installers": "^1.0 || ^2.0"
+    }
+}
