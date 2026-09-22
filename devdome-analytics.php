@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: DevDome Analytics
- * Plugin URI: https://devdome.com/features/analytics
+ * Plugin URI: https://devdome.com/wp-plugins/analytics/
  * Description: Traffic analytics, visitor statistics and click tracking for WordPress, with AI referral detection and bot-filtered numbers.
  * Version: 1.1.2
  * Author: DevDome
