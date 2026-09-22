@@ -1,82 +1,107 @@
-=== DevDome Analytics – WordPress Analytics, Visitor Stats & AI Bot Tracking ===
+=== DevDome Analytics: Visitor Tracker, Site Stats & Bot Detection ===
 Contributors: devdome
-Tags: analytics, traffic analytics, bot traffic, ai referrals, click tracking
+Tags: visitor tracker, visitor tracking, cookieless analytics, ai referrals, bot detection
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.1.1
+Stable tag: 1.1.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-WordPress analytics plugin with real-time visitor stats, traffic analytics, AI crawler tracking, bot detection and outbound click tracking.
+Visitor tracking statistics: site stats, visitor stats, pageviews, sources, bot detection and outbound click reports. Free DevDome account required.
 
 == Description ==
 
-= WordPress Analytics & Visitor Tracking =
+DevDome Analytics is a WordPress visitor tracker for real-time website statistics, traffic sources, sessions and outbound clicks. It reports known bots and AI crawlers separately from human visitors, so detected automated traffic does not inflate your visitor stats. A free DevDome account is required to process analytics events and generate reports through the hosted service.
 
-DevDome Analytics is a WordPress analytics plugin for real-time visitor statistics, website traffic analytics, visitor tracking, bot detection, AI crawler tracking, traffic sources, pageviews, sessions, and outbound click tracking.
+= Site stats and real-time visitors =
 
-See how many real people visit your WordPress site while bots and AI crawlers are measured separately, so automated traffic does not inflate your human visitor statistics.
+Use DevDome as a traffic monitor to see visits as they happen and review website traffic over time. Key metrics appear inside WordPress; detailed web analytics reports in your DevDome dashboard cover periods from the last 24 hours up to 12 months.
 
-A lightweight Google Analytics alternative for WordPress that stores no analytics data in custom tables inside your WordPress database.
+The reports include:
 
-= Real-Time WordPress Analytics =
+* Visitors, unique visitors, live visitors, pageviews and sessions.
+* Top pages, traffic sources and referrers.
+* Countries, devices, operating systems and browsers.
+* Outbound link clicks, bot hits, AI crawlers and AI referral traffic.
+* Pages per visit, session duration and bounce rate.
 
-Track visitors, pageviews, sessions, live visitors, top pages, traffic sources and referrers, countries, devices and browsers, outbound link clicks, bots, AI crawlers, and AI referral traffic.
+The live visitor count answers how many people are visiting now. These real time visitors are shown as aggregate traffic stats, without identifying WordPress user accounts.
 
-Key visitor statistics appear directly inside WordPress, while your DevDome dashboard provides detailed website analytics reports covering periods from the last 24 hours up to 12 months.
+= Page views and blog stats =
 
-= Separate Real Visitors From Bots =
+Review page views and post views in the Pages report to find popular posts and other frequently visited content. Per-page reports include visits, visitors, pageviews, referrers, outbound clicks, countries, browsers, operating systems and devices.
 
-Search engines, SEO crawlers, monitoring services, and AI bots constantly request WordPress websites. DevDome Analytics detects known bots and reports them separately from human visitors.
+For private reporting, the visitor counter and page view counter provide different measures: how many visitors arrived and how many pages they viewed. This website counter is part of your analytics reports; the plugin does not provide a public counter widget.
 
-Detected crawlers include Googlebot, Bingbot, GPTBot, ChatGPT-User, ClaudeBot, PerplexityBot, Google-Extended, CCBot, AhrefsBot, SemrushBot, and other known crawlers.
+= Bot detection and AI crawler tracking =
 
-Unknown or deliberately disguised bots may not always be identifiable.
+Search engines, SEO crawlers, monitoring services and AI bots request WordPress pages. DevDome Analytics detects known crawlers and separates them from human traffic in your visitor analytics.
 
-= AI Crawler Tracking & AI Referral Traffic =
+Detected crawlers include Googlebot, Bingbot, GPTBot, ChatGPT-User, ClaudeBot, PerplexityBot, Google-Extended, CCBot, AhrefsBot, SemrushBot and other known crawlers. Unknown, new or deliberately disguised bots may not always be identifiable.
 
-See which AI crawlers visit your WordPress website. Known AI bots are identified separately from search-engine bots and human traffic, helping you understand when services such as ChatGPT, Claude, Perplexity, and Google-Extended access your content.
+Known AI bots are also distinguished from search-engine bots, helping you see when services such as ChatGPT, Claude, Perplexity and Google-Extended access your content. The plugin reports detected crawlers. It does not block them.
 
-The plugin reports detected crawlers. It does not block them.
+AI referral tracking identifies visits referred by supported assistants, including ChatGPT and Perplexity, separately from other traffic sources.
 
-DevDome Analytics can also identify visits referred by supported AI assistants such as ChatGPT and Perplexity, helping you measure AI referral traffic separately from other website traffic sources.
+= Outbound click tracking and event tracking =
 
-= Outbound Click Tracking =
+Track clicks on links that leave your WordPress site, including:
 
-Track clicks on links that take visitors away from your WordPress site, including affiliate links, product links, partner websites, social profiles, and other external destinations.
+* Affiliate and product links.
+* Partner websites.
+* Social profiles and other external destinations.
 
-Outbound clicks can be relayed through your own WordPress server so they can continue to be measured when ordinary third-party analytics requests are blocked.
+The link click counter records outbound clicks in your reports. Clicks can be relayed through your own WordPress server so they can continue to be measured when ordinary third-party analytics requests are blocked.
 
-= Cookieless & First-Party Analytics =
+Event tracking also covers the documented page activity and, while Track Clicks is on, searches made through your site's search form. Search terms are limited to 200 characters. External services below lists the fields sent with each event.
 
-General website analytics are cookieless on new installations.
+= Cookieless analytics and First-Party Delivery =
 
-Returning-visitor tracking is optional and disabled by default. Outbound click tracking can use random visitor and session identifiers when a visitor clicks an external link and can also be disabled independently.
+General website analytics are cookieless on new installations. Track Returning Visitors is optional and disabled by default.
 
-First-Party Delivery is available on supported DevDome plans. When enabled, the analytics script is served from your own domain and tracking events are relayed through your WordPress server using randomized site-specific paths.
+Outbound click tracking can use random visitor and session identifiers when someone clicks an external link. With returning-visitor tracking off, those identifiers stay in memory for the current page. Outbound tracking can be disabled independently.
 
-This can reduce analytics data loss caused by browser extensions and ad blockers that target known third-party analytics domains, although no tracking method can guarantee detection of every visit.
+First-Party Delivery is available on supported DevDome plans. When enabled, the analytics script is served from your own domain and events are relayed through your WordPress server using randomized paths specific to your site.
 
-= Privacy Controls =
+This can reduce data loss caused by browser extensions and ad blockers that target known third-party analytics domains. No tracking method guarantees detection of every visit.
 
-You can independently enable or disable analytics tracking, returning visitor tracking, outbound click tracking, AI referral tracking, and bot and crawler tracking.
+= Tracking settings and privacy controls =
 
-Administrators and editors are excluded by default, additional WordPress roles can be excluded, and the browser Do Not Track signal is respected by default.
+You control collection through separate settings:
 
-DevDome Analytics does not collect form field values, post content, WordPress user accounts, customer data, order data, or activity inside wp-admin.
+* Enable Tracking is the master switch.
+* Track Returning Visitors controls recognition across days.
+* Track Clicks and Track Outbound Links control click collection.
+* Track AI Referrals controls AI referral identification.
+* Track Bot Visits controls bot and crawler reporting.
 
-= No Analytics Tables in WordPress =
+Administrators and editors are excluded by default on new installations. You can exclude additional WordPress roles. The browser Do Not Track signal is respected by default.
 
-Analytics events are processed by the hosted DevDome Analytics service instead of being stored in custom analytics tables inside your WordPress database.
+DevDome Analytics does not collect post content, WordPress user accounts, customer data, order data or activity inside wp-admin. It does not collect visitor form field values except the site's own search terms when tracking and click tracking are enabled. Full transmission and storage details appear below.
 
-A free DevDome account is required because analytics events are processed and reports are generated by the hosted service.
+= Hosted reports without WordPress analytics tables =
 
-No visitor data is tracked or sent until the site is connected (the DevDome Tools dashboard's plugin catalog request and the connection-status check on the plugin's own screen are described below).
+DevDome is a lightweight Google Analytics alternative for WordPress. Analytics events are processed by the hosted DevDome Analytics service, with no custom analytics tables or analytics event storage inside your WordPress database.
 
-= AI and Agent Support =
+The WordPress Overview tab shows key metrics. Your DevDome account provides full traffic, referral, click, location, device and crawler reports.
 
-On WordPress 6.9 and newer, DevDome Analytics registers WordPress Abilities covering the plugin: connection status, the traffic numbers of the last 1, 7 or 30 days (the same the dashboard shows), every tracking setting (read and update), the connection test, the one-click connect link, disconnect and data reset. Compatible AI agents and MCP clients can discover and use these abilities when the site exposes them, for example through the official WordPress MCP Adapter. Every ability runs the same code as the plugin screen under the same administrator capability; disconnect and data reset require an explicit confirmation and are annotated destructive; agent output never carries e-mail addresses or the site token. For an unconnected site only the abilities you invoke on purpose talk to DevDome: the connect link (confirmed) and the connection test; the two pre-connection requests are listed under External services.
+No visitor data is tracked or sent until the site is connected. The DevDome Tools dashboard's plugin catalog request and the connection-status check on the plugin's own screen are described under External services.
+
+= AI and agent support =
+
+On WordPress 6.9 and newer, DevDome Analytics registers WordPress Abilities for:
+
+* Connection status and traffic numbers for the last 1, 7 or 30 days, matching the dashboard.
+* Reading and updating every tracking setting.
+* Testing the connection and obtaining the one-click connect link.
+* Disconnecting and resetting data.
+
+Compatible AI agents and MCP clients can discover and use these abilities when the site exposes them, for example through the official WordPress MCP Adapter.
+
+Every ability runs the same code as the plugin screen under the same administrator capability. Disconnect and data reset require explicit confirmation and are annotated destructive. Agent output never carries email addresses or the site token.
+
+On an unconnected site, only abilities you deliberately invoke contact DevDome: the confirmed connect-link request and the connection test. The pre-connection requests are detailed under External services.
 
 == External services ==
 
@@ -84,7 +109,7 @@ On WordPress 6.9 and newer, DevDome Analytics registers WordPress Abilities cove
 
 **Plugin catalog (`devdome.com`).** The DevDome Dashboard inside wp-admin fetches the list of DevDome plugins (names, descriptions, logos, links, WordPress.org slugs) from `https://devdome.com/wp-plugins/catalog.json` at most once every 12 hours, so the list stays current. Only the bundled core version is sent in the request; no site or visitor data. Service provider: DevDome. Terms: https://devdome.com/terms-of-service Privacy policy: https://devdome.com/privacy-policy
 
-DevDome Analytics is a connector for the DevDome Analytics service. It talks to two hosts, both operated by DevDome.
+DevDome Analytics is a connector for the DevDome Analytics service. Its analytics and account requests use two hosts, both operated by DevDome. The separate catalog and optional error-report requests to devdome.com are described above.
 
 Terms of service: https://devdome.com/terms-of-service
 Privacy policy: https://devdome.com/privacy-policy
@@ -92,9 +117,11 @@ Privacy policy: https://devdome.com/privacy-policy
 = analytics.devdome.com - the analytics service =
 
 **The tracking script, https://analytics.devdome.com/track.js**
+
 Loaded in your visitors' browsers on public pages, once the site is connected and Enable Tracking is on. It is not added to your pages before you connect. With First-Party Delivery on, a copy of this script that ships inside the plugin is placed in your uploads folder and served from your own domain instead; nothing is downloaded from DevDome for it.
 
 **The event ingest, https://analytics.devdome.com/api/event**
+
 This is where analytics events are recorded, and there are four ways it is reached.
 
 1. From the visitor's browser, by the tracking script above. While Track Clicks is on, a site search also sends the search words typed into your site's search form (up to 200 characters). Each event carries: your Site ID (this site's domain), your DevDome Account ID, the page URL and path, the page title, the referring URL, browser, operating system, device type, user agent, browser language, screen size, time zone, country, the target URL of a click (for a link on your own site, without its query string), whether the browser reports itself as automated, the bundled bot detector's verdict, whether the referrer was an AI assistant (only while Track AI Referrals is on), and a visitor ID and session ID only when the browser is storing them (see the FAQ on what is stored). The browser contacts the service directly, so its IP address is visible to it, as with any web server.
@@ -103,20 +130,25 @@ This is where analytics events are recorded, and there are four ways it is reach
 4. From your server, when a known crawler requests a page and Track Bot Visits is on. That event carries the crawler's user agent, the bot name and type, the requested URL and path, your Site ID and a timestamp. No human visitor data is in it.
 
 **The plan check, https://analytics.devdome.com/api/plugin/entitlements**
+
 Asks whether this site's DevDome plan includes First-Party Delivery. Sent only on a connected site: when you turn the switch on, once a day by the refresh job while it is on, and while the Analytics screen is open at most once every two minutes so a plan change shows quickly. It carries your Site ID and this site's secret token. No visitor data.
 
 **The connection handshake, https://analytics.devdome.com/api/plugin/status**
+
 Sent when you connect the site and when the connection is re-verified. Contains your Site ID, this site's secret token, your Account ID, the site URL, the site name, **the site administrator's email address**, the WordPress version, the PHP version, the plugin version, the active theme name, the timezone, the site language and whether this is a multisite install. No visitor data.
 
 A shorter form (Site ID and secret token only) also runs when you open the plugin's screen, at most once per 15 minutes: a site already connected on devdome.com shows as connected here without a second connect step. No visitor data, nothing on public pages.
 
 **The one-click connect handshake, https://analytics.devdome.com/api/plugin/connect/start and /api/plugin/connect/claim**
+
 `connect/start` runs only when you press the "Connect Via DevDome Account" button, never on its own (opening the plugin's screen makes only the connection-status check described above). It sends this site's domain, its secret token and the wp-admin address to return to, and receives a short-lived connect link. `connect/claim` runs when your browser returns from devdome.com and exchanges that link for your Account ID.
 
 **The stats read, https://analytics.devdome.com/api/plugin/stats**
+
 Sends your Site ID, this site's secret token (so only your own site can read its numbers) and the selected day range. Used to fill the Overview tiles in wp-admin, and the bot-visit figure shared with DevDome Bot Protection when that plugin is installed.
 
 **Deleting your data, https://analytics.devdome.com/api/plugin/purge**
+
 Sends your Site ID and this site's secret token, and only when you press Reset Analytics, or tick "Also delete my data on DevDome" while disconnecting.
 
 = api.devdome.com - DevDome account services =
@@ -124,9 +156,13 @@ Sends your Site ID and this site's secret token, and only when you press Reset A
 These two are made by the shared DevDome library bundled with every plugin in the suite.
 
 **The account check, https://api.devdome.com/plugin/account**
+
 A POST carrying this site's domain and its secret token, answered with the Account ID and account email address that the token belongs to, so the DevDome screen can show which account this site is linked to. It runs when a DevDome admin screen is displayed and its cached answer has expired: a good answer is kept fifteen minutes (so a plan change shows quickly), a refusal one hour, an outage ten minutes. Never before you have acted: until you press a Connect button, save an Account ID or complete a connection, this check is not made at all.
 
+When you connect from the DevDome Tools dashboard, whose Connect card states this before you press the button, those account checks also carry the slug and version of each active DevDome plugin on the site plus the bundled DevDome library, WordPress and PHP versions, so your DevDome account can show your sites and their DevDome plugins for support and update notices. Nothing about other plugins, users, email addresses, content or visitors is included. Sites connected before this was introduced, and sites connected from a button that does not show that text, do not send the list. Disconnecting stops the plugin list.
+
 **Disconnecting, https://api.devdome.com/plugin/disconnect**
+
 A POST carrying this site's domain and its secret token, sent only when you press Disconnect, to unlink the site from the account.
 
 = Not contacted on this WordPress.org build =
@@ -157,25 +193,29 @@ The bundled shared library also references endpoints this build never calls: the
 
 = Do I need a DevDome account? =
 
-Yes. DevDome Analytics is a connector for the hosted DevDome Analytics service, where analytics events are processed and full reports are displayed. A free plan is available. No visitor data is collected until you connect the site.
+Yes. DevDome Analytics connects WordPress to the hosted DevDome Analytics service, where analytics events are processed and full reports are displayed. A free plan is available. No visitor data is collected until you connect the site.
 
 = Does it remove all bot traffic from visitor reports? =
 
-It detects known bots and AI crawlers and reports them separately from human visitors. Unknown, new, or deliberately disguised bots may not always be identifiable.
+It detects known bots and AI crawlers and reports them separately from human visitors. Unknown, new or deliberately disguised bots may not always be identifiable.
 
 = Is anything sent before I connect? =
 
-No visitor data, ever. Before the site is connected, the tracking script is not added and no analytics events are sent. The one exception is a connection-status check (this site's domain and its secret token, nothing else) when you open the plugin's own screen, so a site you already connected on devdome.com shows as connected here without a second connect step.
+No visitor data is sent. Before the site is connected, the tracking script is not added and no analytics events are sent.
 
-= Does it set cookies? =
+Opening the plugin's own screen can send a connection-status check containing only this site's domain and secret token. This lets a site already connected on devdome.com appear connected here without another connect step.
 
-General traffic tracking is cookieless on new installs. Returning-visitor tracking is optional and disabled by default.
+The DevDome Dashboard also requests the plugin catalog, sending only the bundled core version. An error report is sent only if you press "Report this error". External services lists these requests and the connection requests you deliberately initiate.
 
-Outbound-link tracking keeps its random IDs in memory only while Track Returning Visitors is off; with it on, they are stored like the page tracker's. Full details under "What is stored on my site and on a visitor's device?" below.
+= Does visitor tracking set cookies? =
+
+General traffic tracking is cookieless on new installations. Returning-visitor tracking is optional and disabled by default.
+
+Outbound-link tracking keeps its random IDs in memory only while Track Returning Visitors is off. With it on, they are stored like the page tracker's IDs. See "What is stored on my site and on a visitor's device?" below for details.
 
 = Can I exclude myself and my team? =
 
-Yes. Logged-in administrators are excluded by default (Do Not Track Admins), and new installs also exclude the Editor role. You can exclude any additional WordPress role.
+Yes. Logged-in administrators are excluded by default through Do Not Track Admins, and new installations also exclude the Editor role. You can exclude any additional WordPress role.
 
 = Will it slow down my site? =
 
@@ -187,7 +227,7 @@ Yes. The tracking snippet is the same for every visitor, so it works with full-p
 
 = Which crawlers can it report? =
 
-The current detection list includes GPTBot, ChatGPT-User, ClaudeBot, PerplexityBot, Google-Extended, Bytespider, CCBot, Googlebot, bingbot, Slurp, DuckDuckBot, Baiduspider, YandexBot, AhrefsBot, SemrushBot, MJ12bot, DotBot, and Screaming Frog.
+The current detection list includes GPTBot, ChatGPT-User, ClaudeBot, PerplexityBot, Google-Extended, Bytespider, CCBot, Googlebot, bingbot, Slurp, DuckDuckBot, Baiduspider, YandexBot, AhrefsBot, SemrushBot, MJ12bot, DotBot and Screaming Frog.
 
 The plugin reports detected crawlers; it does not block them.
 
@@ -197,30 +237,79 @@ Tracking stops immediately. You can also delete the site's hosted analytics data
 
 = Does it support WordPress multisite? =
 
-Yes. Settings and the connection are per site: each site is connected from its own Analytics screen. On a subdomain or mapped-domain network each site has its own Site ID and reports. On a subdirectory network every site shares the main site's domain and therefore one Site ID, one secret token and one report, and connecting or disconnecting there needs a network administrator.
+Yes. Settings and the connection are per site: each site is connected from its own Analytics screen.
 
-= Where do I see the reports? =
+On a subdomain or mapped-domain network, each site has its own Site ID and reports. On a subdirectory network, every site shares the main site's domain and therefore one Site ID, one secret token and one report. Connecting or disconnecting on a subdirectory network requires a network administrator.
 
-The WordPress Overview tab shows key metrics. Full traffic, referral, click, location, device, and crawler reports are available in your DevDome account.
+= Where do I see site stats and who is online? =
+
+The WordPress Overview tab shows key metrics, including live visitors. This shows how many visitors are active, without identifying their WordPress accounts.
+
+Full traffic, referral, click, location, device and crawler reports are available in your DevDome account.
 
 = What is stored on my site and on a visitor's device? =
 
-**What is stored on your site.** Roughly thirty option rows: the tracking switches, the service addresses, this site's ID and secret token, your Account ID and account email, the timestamp of the connection, and, for First-Party Delivery, the switch itself and the randomized path and file names generated for this site; on a site DevDome set up itself, also the relay credential DevDome issued to it. When that switch is on, two JavaScript files (the tracking script and the bundled bot detector, both copied out of the plugin's own package) are placed under your uploads folder; both are removed at uninstall, by the names the plugin stored for them. One more row can appear after a plugin update on a host where the plugin folder belonged to another system user: the shared DevDome core copies the folder so WordPress can update it, keeps the old folder hidden under a dot name in wp-content/plugins (the web server cannot delete it), and records its fingerprint in one option row so the DevDome Malware Scanner recognises it. That hidden folder loads nothing; your server administrator can remove it. The option row is not removed at uninstall in this version. Nothing else. No custom tables, no post meta, no user meta, and not one analytics event. The short-lived transients: a connect handle (10 minutes), the cached bot-visit figure (1 hour), the cached plan answer for First-Party Delivery (a day), and flood counters for the `/dd-e` and First-Party relay endpoints that live for 2 minutes and are keyed by an MD5 hash of the visitor's IP address.
+**What is stored on your site.**
 
-**Public paths the plugin adds.** Up to four. `/dd-e` (only while connected) accepts the outbound-click beacon described in External services; it answers empty to everything else, requires the browser's own same-site Origin header, ignores requests from excluded roles, is rate limited per IP address and stores nothing. The First-Party Delivery relay (only while that switch is on) is a randomized path unique to your site that accepts the tracking events described in External services under the same rules and stores nothing; its own per-IP limit runs when the site has a persistent object cache (without one, the DevDome service's per-site limit applies). `/.well-known/devdome-analytics.txt` (only while connected) returns one short line of fixed text, so DevDome can confirm the plugin really is installed on the domain you connected. `/.well-known/devdome-connect-proof.txt` returns a one-way SHA-256 fingerprint of this site's secret token (never the token itself), so DevDome can confirm during connection that the request really came from this site.
+Roughly thirty option rows hold the tracking switches, service addresses, this site's ID and secret token, your Account ID and account email, and the connection timestamp. For First-Party Delivery, they also hold the switch and the randomized path and file names generated for this site. On a site DevDome set up itself, they also hold the relay credential DevDome issued to it.
 
-**What is stored on a visitor's device.** Two settings decide this, and they are independent of each other.
+When First-Party Delivery is on, two JavaScript files are placed under your uploads folder: the tracking script and bundled bot detector, both copied from the plugin's own package. Both are removed at uninstall using the names the plugin stored.
 
-* **Track Returning Visitors, off on new installs.** While it is off, the DevDome tracking script writes nothing at all: no cookie, no localStorage, no sessionStorage. Unique visitors are still counted, using an identifier DevDome derives on its own server from the request (site, date, IP address and user agent, combined with a secret key); it changes daily, differs per site, and cannot be reversed to identify a person. The trade-off: a visitor who returns tomorrow counts as new. Turning the setting on stores a random visitor ID in a first-party cookie and localStorage, plus a session ID in sessionStorage, so the same person is recognised across days and a click can be tied back to its visit. With it on, an event the browser could not deliver (a network blip) is kept in localStorage, at most fifty, and sent on the next page load; with it off nothing is queued. Random values, nothing personal in them, but they are storage on a visitor's device, so **you may need visitor consent for it**. The setting says so where you switch it on.
-* **Track Outbound Links, on by default.** The built-in click detector counts clicks on links that leave your site. With Track Returning Visitors off it keeps its two random ids in memory only, for the page you are on, and stores nothing on the device; with Track Returning Visitors on it stores them like the page tracker does, so the outbound click can be tied to the same visit.
+One more row can appear after a plugin update on a host where the plugin folder belonged to another system user. The shared DevDome core copies the folder so WordPress can update it, keeps the old folder hidden under a dot name in wp-content/plugins because the web server cannot delete it, and records its fingerprint in one option row so DevDome Malware Scanner recognises it.
 
-**Sites upgrading from an earlier version** keep returning-visitor tracking on, exactly as they behaved before, so nothing changes on a live site until you decide otherwise.
+That hidden folder loads nothing; your server administrator can remove it. The fingerprint option row is not removed at uninstall in this version.
 
-**IP addresses.** The plugin never stores a visitor's IP address on your site in readable form. It reaches DevDome two ways: the tracking script connects to the service from the visitor's browser, like any web request; and relayed events (outbound clicks, First-Party Delivery) deliberately carry the visitor's real address, else they would all be attributed to your server. DevDome uses it for geolocation and per-visitor counts.
+There are no custom tables, post meta, user meta or stored analytics events. Short-lived transients hold:
 
-**How to turn things off.** Enable Tracking is the master switch, and turning it off stops all collection. Track Clicks, Track Outbound Links, Track AI Referrals and Track Bot Visits each switch off on their own. Do Not Track Admins is on by default. Excluded roles lets you name any role that must never be tracked; new installs start with Administrator and Editor. Respect Do Not Track is on by default and honours the browser signal.
+* A connect handle for 10 minutes.
+* The cached bot-visit figure for 1 hour.
+* The cached First-Party Delivery plan answer for a day.
+* Flood counters for `/dd-e` and First-Party relay endpoints for 2 minutes, keyed by an MD5 hash of the visitor's IP address.
 
-**How to remove your data.** Disconnect stops everything immediately: the tracking script is no longer added to your pages, the `/dd-e` endpoint stops relaying, and the domain-verification file is no longer served. To delete what DevDome has already collected, either press Reset Analytics, or tick "Also delete my data on DevDome" while disconnecting. If you do neither, DevDome deletes it automatically after 90 days of inactivity. On your own site there is nothing to clean up beyond the option rows listed above: the plugin creates no tables and stores no analytics data locally.
+**Public paths the plugin adds.**
+
+There are up to four:
+
+* `/dd-e`, only while connected, accepts the outbound-click beacon described in External services. It answers empty to everything else, requires the browser's own same-site Origin header, ignores requests from excluded roles, is rate limited per IP address and stores nothing.
+* The First-Party Delivery relay, only while that switch is on, uses a randomized path unique to your site. It accepts the tracking events described in External services under the same rules and stores nothing. Its own per-IP limit runs when the site has a persistent object cache; without one, the DevDome service's per-site limit applies.
+* `/.well-known/devdome-analytics.txt`, only while connected, returns one short line of fixed text so DevDome can confirm the plugin is installed on the connected domain.
+* `/.well-known/devdome-connect-proof.txt` returns a one-way SHA-256 fingerprint of this site's secret token, never the token itself, so DevDome can confirm during connection that the request came from this site.
+
+**What is stored on a visitor's device.**
+
+Two independent settings decide this.
+
+**Track Returning Visitors** is off on new installations. While off, the DevDome tracking script writes no cookie, localStorage or sessionStorage.
+
+Unique visitors are still counted using an identifier DevDome derives on its server from the site, date, IP address and user agent, combined with a secret key. It changes daily, differs per site and cannot be reversed to identify a person. A visitor who returns tomorrow counts as new.
+
+Turning the setting on stores a random visitor ID in a first-party cookie and localStorage, plus a session ID in sessionStorage. This recognises returning visitors across days and ties a click back to its visit.
+
+With the setting on, events the browser could not deliver because of a network interruption are kept in localStorage, up to fifty, and sent on the next page load. With it off, nothing is queued.
+
+These are random values with nothing personal in them, but they use storage on a visitor's device, so **you may need visitor consent for it**. The setting explains this where you switch it on.
+
+**Track Outbound Links** is on by default. The built-in click detector counts clicks on links that leave your site. With Track Returning Visitors off, its two random IDs stay in memory for the current page and nothing is stored on the device. With Track Returning Visitors on, they are stored like the page tracker's IDs so the outbound click can be tied to the same visit.
+
+**Sites upgrading from an earlier version** keep returning-visitor tracking on, exactly as before. Nothing changes on a live site until you decide otherwise.
+
+**IP addresses.**
+
+The plugin never stores a visitor's IP address on your site in readable form. The address reaches DevDome in two ways: the tracking script connects from the visitor's browser, as with any web request; and relayed outbound-click and First-Party Delivery events deliberately carry the visitor's real address so visits are not all attributed to your server. DevDome uses it for geolocation and per-visitor counts.
+
+**How to turn things off.**
+
+Enable Tracking is the master switch. Turning it off stops all collection. Track Clicks, Track Outbound Links, Track AI Referrals and Track Bot Visits can each be switched off independently.
+
+Do Not Track Admins is on by default. Excluded roles lets you name any role that must never be tracked; new installations start with Administrator and Editor. Respect Do Not Track is on by default and honours the browser signal.
+
+**How to remove your data.**
+
+Disconnect stops everything immediately: the tracking script is no longer added to pages, `/dd-e` stops relaying, and the domain-verification file is no longer served.
+
+To delete data already collected by DevDome, press Reset Analytics or tick "Also delete my data on DevDome" while disconnecting. Otherwise, DevDome deletes it automatically after 90 days of inactivity.
+
+On your own site, there is no analytics data to clean up beyond the option rows listed above. The plugin creates no tables and stores no analytics data locally.
 
 == Source code ==
 
@@ -244,10 +333,16 @@ Those two build inputs are not included in the distributed package. Ask for them
 
 == Changelog ==
 
+= 1.1.2 =
+* Bundled DevDome library 1.7.6: if you connect a DevDome account from the DevDome Tools dashboard, the Connect card now says exactly what is shared, including the list of active DevDome plugins and their versions. Sites that were already connected, and sites that never connect, send nothing new. See External services.
+* Listing text rewritten: new title, short description, tags and a restructured description. No change to how the plugin works.
+
 = 1.1.1 =
+
 * Updates now work when the plugin folder belongs to another system user (shared DevDome core 1.7.4): a folder installed from a root shell or by an AI agent used to fail every update; the plugin now repairs the folder ownership itself when it can, and says exactly what to run when it cannot.
 
 = 1.1.0 =
+
 * Fixed: the tracker's inline configuration (Do Not Track, cookieless, click and outbound switches) never reached the tracking script on WordPress sites; the script tag filter dropped it. Every switch now applies.
 * AI referrals: visits arriving from ChatGPT, Perplexity, Claude, Gemini, Copilot and similar assistants are labelled as AI referrals on the dashboard while "Track AI Referrals" is on.
 * First-Party Delivery now serves the bot detector from your own domain too (bundled FingerprintJS BotD, MIT); Reset Analytics works (the service side answers it).
@@ -259,19 +354,23 @@ Those two build inputs are not included in the distributed package. Ask for them
 * Multisite: uninstall cleans every site of a network; fresh subsites get the privacy defaults.
 
 = 1.0.8 =
+
 * WordPress Abilities API (WordPress 6.9 and newer): 8 abilities for AI agents and MCP clients through the official WordPress MCP Adapter: get-status, get-stats (1, 7 or 30 days), get-settings, test-connection, update-settings (read back before reported), start-connect (returns the approve link), disconnect and reset-data (both require confirm: true and are annotated destructive). Every write goes through the same handler as the screen. Agent output never carries e-mail addresses or the site token.
 * Disconnect now checks the account server's answer and says when the site could not be unlinked remotely.
 * Security review fixes: a disconnect stays a disconnect even when the account server could not be told (no silent re-link); the master tracking switch and the Do Not Track signal are enforced at every sending point, including beacons from pages cached earlier and bot reporting; the click switches are honoured by the first-party tracker copy; settings saves report what was actually stored; an agent must confirm before a change that collects more visitor data; the generated first-party script is never written or deleted through a symbolic link; the relay credential is removed on uninstall when Delete data on uninstall is enabled; the site-search term disclosure was added to the readme.
 * The stats endpoint accepts 1 to 365 days only; agent error messages pass through the same redaction as results; the install notes no longer mention a manual Account ID step.
 
 = 1.0.7 =
+
 * Settings: every switch now shows a one line hint with an info icon holding the full explanation of what is sent and what turning it off changes, the same layout as DevDome Malware Scanner.
 * DevDome Dashboard: installing another DevDome plugin from the dashboard no longer activates it, you activate it yourself from its card. Output escaping tightened.
 
 = 1.0.6 =
+
 * DevDome Dashboard: plugin list, descriptions, logos and versions now come from devdome.com, one-click install of DevDome plugins from WordPress.org, Docs link and Fix buttons, Activate stays on the dashboard.
 
 = 1.0.5 =
+
 * First-Party Delivery is honest about why it is unavailable: while the site is not connected the switch is disabled with a Connect button above it, and on the Free plan it shows "Included in the Pro plan and above" instead of switching itself back off. Plan changes now reach the screen within minutes.
 * The manual Account ID connect option was removed. Connecting is always the one-click, signed-in flow.
 * Disconnecting from the plugin now also unlinks the site on DevDome servers and clears every cached account detail, so every DevDome plugin on the site agrees immediately.
@@ -280,6 +379,7 @@ Those two build inputs are not included in the distributed package. Ask for them
 * New bug-report button in the page header.
 
 = 1.0.4 =
+
 * New: First-Party Delivery, an optional ad-block-resistant mode (off by default, included in the DevDome Pro plan and above). The tracking script is served from your own domain and events relay through your own site server-side with randomized per-site names, so ordinary blockers of third-party analytics domains cannot drop them. Bypasses most, not all, blockers. Every relayed field is validated and sanitized, identity always comes from the plugin's own settings, and the relay accepts only same-site browser requests.
 * Connecting works again for fresh installs: the plugin serves a one-way fingerprint of its site token at `/.well-known/devdome-connect-proof.txt`, which the DevDome service verifies against your site before accepting the connection. No token, secret, or visitor data is exposed by it.
 * One connection, both sides: a site connected through the devdome.com dashboard now shows as connected in wp-admin by itself, and if the site is removed or its token rotated on the dashboard, the plugin flips to disconnected with a clear notice instead of staying green while calls fail. A local Disconnect always sticks.
@@ -292,18 +392,22 @@ Those two build inputs are not included in the distributed package. Ask for them
 * The plan check sends the site token in a request header instead of the URL.
 
 = 1.0.3 =
+
 * New optional First-Party Delivery mode (off by default, included in the DevDome Pro plan and above): the tracking script is served from your own domain and events are relayed through your site server-side, using randomized names unique to your site, so ordinary ad blockers that block third-party analytics domains cannot drop them. Bypasses most, not all, blockers. Every relayed field is validated and sanitized before forwarding, identity always comes from the plugin's own settings, and the forward authenticates with your site token. All other tracking is unchanged on every plan.
 
 = 1.0.2 =
+
 * Unified DevDome suite icons and updated the suite hub with one-click installs for WordPress.org plugins.
 
 = 1.0.1 =
+
 * No request is made to DevDome before you act: the one-click connect link is now requested only when you press "Connect Via DevDome Account", and the account check no longer runs until a connection has been started or completed. Off by default, opt-in by a button press.
 * The connect screen now says exactly what connecting sends before you press the button.
 * Every field of the relayed outbound-click event is individually validated and sanitized before it is forwarded, and the site and account identifiers in it now always come from the plugin's own settings, never from the request body.
 * Request paths and IP addresses read from server variables are sanitized where they are read.
 
 = 1.0.0 =
+
 * First release on WordPress.org.
 * The admin screen's styles and behaviour now load as enqueued files instead of inline blocks.
 * The tracking snippet is enqueued too: the plugin no longer writes script tags into the page markup. Outbound-click counting is unchanged, including on sites where a blocker stops the tracker file from loading.
