@@ -1,18 +1,22 @@
-=== DevDome Analytics: Visitor Tracker, Site Stats & Bot Detection ===
+=== DevDome Analytics: Visitor Tracker, Cookieless Analytics, Site Stats & Bot Detection ===
 Contributors: devdome
-Tags: visitor tracker, visitor tracking, cookieless analytics, ai referrals, bot detection
+Tags: visitor tracker, cookieless analytics, outbound clicks, ai referrals, bot detection
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.1.2
+Stable tag: 1.1.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Visitor tracking statistics: site stats, visitor stats, pageviews, sources, bot detection and outbound click reports. Free DevDome account required.
+Cookieless analytics, visitor tracker for site stats, visitor stats, bot traffic, bot detection, AI referrals, realtime visitors and outbound clicks.
 
 == Description ==
 
-DevDome Analytics is a WordPress visitor tracker for real-time website statistics, traffic sources, sessions and outbound clicks. It reports known bots and AI crawlers separately from human visitors, so detected automated traffic does not inflate your visitor stats. A free DevDome account is required to process analytics events and generate reports through the hosted service.
+DevDome Analytics is a WordPress visitor tracker for site stats, visitor stats and outbound clicks. Review page views, sessions and traffic sources, and see realtime visitors as an aggregate count. Key metrics appear inside WordPress, while full reports are available on the hosted DevDome Analytics service. A free DevDome account is required.
+
+General website tracking uses cookieless analytics on new installations, with Track Returning Visitors off by default. You can switch this setting on to recognize returning visitors across days. With the setting off, identifiers used to track outbound clicks stay in memory for the current page. Outbound click tracking can also be disabled independently.
+
+With bot detection, known bot traffic and AI bots are reported separately from human visitors, so detected automated traffic does not inflate your human visitor totals. The plugin reports detected crawlers and does not block them. AI referrals identify visits from supported assistants such as ChatGPT and Perplexity, separately from other traffic sources.
 
 = Site stats and real-time visitors =
 
@@ -332,6 +336,11 @@ Those two build inputs are not included in the distributed package. Ask for them
 7. Devices report: desktop, mobile and tablet with pageviews, visitors, clicks, countries, browsers, OS, top pages and referrers.
 
 == Changelog ==
+
+= 1.1.3 =
+
+* Listing text updated: title, short description, tags and introduction.
+* Shared DevDome library 1.7.7: the first time you open any DevDome plugin screen, a small one-time hint points at the Report a bug button. It is shown once per user across all DevDome plugins.
 
 = 1.1.2 =
 * Bundled DevDome library 1.7.6: if you connect a DevDome account from the DevDome Tools dashboard, the Connect card now says exactly what is shared, including the list of active DevDome plugins and their versions. Sites that were already connected, and sites that never connect, send nothing new. See External services.

@@ -125,6 +125,17 @@ class DEVDALYT_Admin {
 	private static function inline_css() {
 		return '
 			.dd-app .dd-tabs { display:flex; align-items:center; gap:4px; background:#fff; padding:0 24px; }
+			.dd-app .bp-conn { display:flex; align-items:center; gap:16px; background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:18px 20px; margin-bottom:12px; box-shadow:0 1px 2px rgba(0,0,0,.05); flex-wrap:wrap; }
+			.dd-app .bp-conn-ci { display:inline-flex; align-items:center; justify-content:center; width:46px; height:46px; border-radius:12px; background:linear-gradient(150deg,#3b82f6,#2563eb 55%,#1d4ed8); box-shadow:0 7px 15px -6px rgba(37,99,235,.6); flex:none; color:#fff; font-weight:800; letter-spacing:-1px; font-size:18px; }
+			.dd-app .bp-conn-body { flex:1 1 320px; min-width:0; }
+			.dd-app .bp-conn-body strong { display:block; font-size:14.5px; font-weight:700; color:#0f172a; }
+			.dd-app .bp-conn-body span { font-size:12.5px; color:#475569; line-height:1.45; }
+			.dd-app .bp-conn-body a { color:#2563eb; text-decoration:underline; }
+			.dd-app .bp-conn-ctl { display:flex; flex-direction:column; gap:8px; flex:0 1 272px; }
+			.dd-app .bp-conn-btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; font-size:14px; font-weight:600; border-radius:8px; padding:10px 20px; text-decoration:none; cursor:pointer; line-height:1; border:1px solid transparent; white-space:nowrap; transition:.12s; }
+			.dd-app .bp-conn-solid { width:100%; padding:9px 14px; color:#fff; background:#2563eb; border-color:#2563eb; box-shadow:0 4px 10px -3px rgba(37,99,235,.5); }
+			.dd-app .bp-conn-solid:hover { background:#1d4ed8; border-color:#1d4ed8; }
+			.dd-app .bp-conn-hint { margin:0; font-size:12px; color:#64748b; text-align:center; }
 			.dd-app .dd-tab { display:inline-flex; align-items:center; gap:6px; padding:12px 16px; font-size:14px; font-weight:600; color:#6b7280; text-decoration:none; border-bottom:2px solid transparent; transition:color .15s,border-color .15s; }
 			.dd-app .dd-tab:hover { color:#1f2937; }
 			.dd-app .dd-tab.is-active { color:#4338ca; border-bottom-color:#4f46e5; }
@@ -381,22 +392,14 @@ class DEVDALYT_Admin {
 				<div class="max-w-5xl px-6 py-6 space-y-8">
 
 					<?php if ( ! $connected ) : ?>
-					<!-- Connect (centered hero — owns the page until the site is linked) -->
-					<section style="display:flex;justify-content:center;padding-top:32px;">
-						<div class="dd-card" style="max-width:480px;width:100%;text-align:center;padding:40px 36px;">
-							<div style="width:60px;height:60px;border-radius:16px;background:#eef2ff;display:inline-flex;align-items:center;justify-content:center;margin-bottom:18px;">
-								<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
-							</div>
-							<h2 style="margin:0 0 6px;font-size:20px;font-weight:700;color:#1f2937;">Connect your site to DevDome</h2>
-							<p style="margin:0 0 12px;font-size:13px;color:#6b7280;">Link this site to your DevDome account to start collecting analytics.</p>
-							<p style="margin:0 0 24px;font-size:12px;color:#6b7280;">Opening this screen only checks whether this site is already connected to a DevDome account (it sends the site&rsquo;s domain and its secret site token, nothing else). No visitor tracking starts until the site is connected. Connecting links the site to your account &mdash; see the readme&rsquo;s External services section and the <a href="https://devdome.com/privacy-policy" target="_blank" rel="noopener">privacy policy</a>.</p>
-
-							<?php if ( get_option( 'devdalyt_remote_disconnected', false ) ) : ?>
+					<!-- Connect card: the Bot Protection card 1:1 (badge, title, consent with links, button right) -->
+					<section>
+						<?php if ( get_option( 'devdalyt_remote_disconnected', false ) ) : ?>
 							<p style="margin:0 0 20px;padding:10px 12px;background:#fef7e0;border:1px solid #f6e3a1;border-radius:8px;color:#7a5900;font-size:13px;">
 								<?php esc_html_e( 'This site was disconnected on the DevDome dashboard (removed or its token was rotated). Connect again to resume tracking.', 'devdome-analytics' ); ?>
 							</p>
 							<?php endif; ?>
-							<?php if ( '' !== $oauth_error ) : ?>
+						<?php if ( '' !== $oauth_error ) : ?>
 							<p style="margin:0 0 20px;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#b91c1c;font-size:13px;">
 								<?php
 								echo esc_html(
@@ -411,19 +414,23 @@ class DEVDALYT_Admin {
 								<?php if ( function_exists( 'devdcorev1_error_report_button' ) ) : ?><br><?php echo devdcorev1_error_report_button( 'devdome-analytics', DEVDALYT_VERSION, 'Connect failed (' . $oauth_error . ')' . ( '' !== $oauth_why ? ': ' . $oauth_why : '' ), 'Analytics connect' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped by the core helper ?><?php endif; ?>
 							</p>
 							<?php endif; ?>
-
-							<div data-panel="account">
-								<style>.dd-cgo-btn:hover{background:#1d4ed8 !important;border-color:#1d4ed8 !important;}</style>
+						<div class="bp-conn">
+							<span class="bp-conn-ci">DD</span>
+							<div class="bp-conn-body">
+								<strong>Connect this site to your DevDome account</strong>
+								<span>Opening this screen only checks whether this site is already connected (it sends the site&rsquo;s domain and secret token, nothing else). Nothing about your visitors is sent until you connect and turn tracking on. Connecting sends this site&rsquo;s domain and token, its URL and name, the administrator&rsquo;s email, and the plugin, WordPress and PHP versions to analytics.devdome.com; tracking then sends cookieless page views and clicks. Details in the readme&rsquo;s External services. <a href="https://devdome.com/privacy-policy" target="_blank" rel="noopener noreferrer">Privacy Policy</a> &middot; <a href="https://devdome.com/terms-of-service" target="_blank" rel="noopener noreferrer">Terms of Service</a></span>
+							</div>
+							<div class="bp-conn-ctl" data-panel="account">
 								<?php if ( current_user_can( devdalyt_connect_cap() ) ) : // the server refuses everyone else (DeepSeek round 9) ?>
 								<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin:0;">
 									<input type="hidden" name="action" value="devdalyt_connect_go">
 									<?php wp_nonce_field( 'devdalyt_connect_go' ); ?>
-									<button type="submit" class="dd-cgo-btn" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:14px;font-weight:600;border-radius:8px;padding:10px 20px;text-decoration:none;cursor:pointer;line-height:1;white-space:nowrap;transition:.12s;color:#fff;background:#2563eb;border:1px solid #2563eb;box-shadow:0 4px 10px -3px rgba(37,99,235,.5);">Connect your DevDome account</button>
+									<button type="submit" class="bp-conn-btn bp-conn-solid">Connect your DevDome account</button>
 								</form>
 								<?php else : ?>
 									<p style="margin:0;font-size:13px;color:#6b7280;"><?php esc_html_e( 'Connecting needs a network administrator on this network.', 'devdome-analytics' ); ?></p>
 								<?php endif; ?>
-								<p class="description" style="margin:12px 0 0;">Opens devdome.com to sign in, then links this site automatically.</p>
+								<p class="bp-conn-hint">Opens devdome.com to sign in, then links this site.</p>
 							</div>
 						</div>
 					</section>
