@@ -4,7 +4,7 @@ Tags: visitor tracker, cookieless analytics, outbound clicks, ai referrals, bot 
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.1.3
+Stable tag: 1.1.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -113,8 +113,6 @@ On an unconnected site, only abilities you deliberately invoke contact DevDome: 
 
 **Plugin catalog (`devdome.com`).** The DevDome Dashboard inside wp-admin fetches the list of DevDome plugins (names, descriptions, logos, links, WordPress.org slugs) from `https://devdome.com/wp-plugins/catalog.json` at most once every 12 hours, so the list stays current. Only the bundled core version is sent in the request; no site or visitor data. Service provider: DevDome. Terms: https://devdome.com/terms-of-service Privacy policy: https://devdome.com/privacy-policy
 
-DevDome Analytics is a connector for the DevDome Analytics service. Its analytics and account requests use two hosts, both operated by DevDome. The separate catalog and optional error-report requests to devdome.com are described above.
-
 Terms of service: https://devdome.com/terms-of-service
 Privacy policy: https://devdome.com/privacy-policy
 
@@ -126,7 +124,7 @@ Loaded in your visitors' browsers on public pages, once the site is connected an
 
 **The event ingest, https://analytics.devdome.com/api/event**
 
-This is where analytics events are recorded, and there are four ways it is reached.
+Reached four ways:
 
 1. From the visitor's browser, by the tracking script above. While Track Clicks is on, a site search also sends the search words typed into your site's search form (up to 200 characters). Each event carries: your Site ID (this site's domain), your DevDome Account ID, the page URL and path, the page title, the referring URL, browser, operating system, device type, user agent, browser language, screen size, time zone, country, the target URL of a click (for a link on your own site, without its query string), whether the browser reports itself as automated, the bundled bot detector's verdict, whether the referrer was an AI assistant (only while Track AI Referrals is on), and a visitor ID and session ID only when the browser is storing them (see the FAQ on what is stored). The browser contacts the service directly, so its IP address is visible to it, as with any web server.
 2. From your server, when it forwards an outbound-link click. The visitor's browser sends the click to the `/dd-e` path on your own domain and your server relays it. Your server adds two fields to that relayed event: the visitor's country code and **the visitor's IP address**, so location and per-visitor counts stay correct when the event arrives from your server instead of from the browser.
@@ -157,13 +155,13 @@ Sends your Site ID and this site's secret token, and only when you press Reset A
 
 = api.devdome.com - DevDome account services =
 
-These two are made by the shared DevDome library bundled with every plugin in the suite.
+Both are made by the shared DevDome library bundled with every DevDome plugin.
 
 **The account check, https://api.devdome.com/plugin/account**
 
 A POST carrying this site's domain and its secret token, answered with the Account ID and account email address that the token belongs to, so the DevDome screen can show which account this site is linked to. It runs when a DevDome admin screen is displayed and its cached answer has expired: a good answer is kept fifteen minutes (so a plan change shows quickly), a refusal one hour, an outage ten minutes. Never before you have acted: until you press a Connect button, save an Account ID or complete a connection, this check is not made at all.
 
-When you connect from the DevDome Tools dashboard, whose Connect card states this before you press the button, those account checks also carry the slug and version of each active DevDome plugin on the site plus the bundled DevDome library, WordPress and PHP versions, so your DevDome account can show your sites and their DevDome plugins for support and update notices. Nothing about other plugins, users, email addresses, content or visitors is included. Sites connected before this was introduced, and sites connected from a button that does not show that text, do not send the list. Disconnecting stops the plugin list.
+When you connect from the DevDome Tools dashboard (its Connect card states this before you press the button), the account checks also carry the slug and version of each active DevDome plugin plus the bundled DevDome library, WordPress and PHP versions, so your account can show your sites and their plugins for support and update notices. Nothing about other plugins, users, email addresses, content or visitors is included. Sites connected from a button without that text do not send the list; disconnecting stops it.
 
 **Disconnecting, https://api.devdome.com/plugin/disconnect**
 
@@ -171,18 +169,18 @@ A POST carrying this site's domain and its secret token, sent only when you pres
 
 = Not contacted on this WordPress.org build =
 
-The bundled shared library also references endpoints this build never calls: the `https://api.devdome.com/bot-protection/` signature feeds (used by other DevDome plugins; never fetched here, no cron scheduled) and `https://api.devdome.com/plugin-updates/` (self-hosted updates, disabled here; updates come from WordPress.org).
+The bundled shared library also references endpoints this build never calls: the `https://api.devdome.com/bot-protection/` signature feeds (used by other DevDome plugins; never fetched here) and `https://api.devdome.com/plugin-updates/` (self-hosted updates, disabled here; updates come from WordPress.org).
 
 = devdome.com =
 
-`https://devdome.com/connect/` is a link you click, not a request the plugin makes. Your browser goes there to sign in and approve the connection, and comes back. The only server-side requests to devdome.com are the two listed above: the plugin catalog (at most every twelve hours) and an error report you send by pressing the button.
+`https://devdome.com/connect/` is a link you click, not a request the plugin makes: your browser goes there to sign in and approve the connection, then comes back. The only server-side requests to devdome.com are the two listed above.
 
 = Never sent, in any request =
 
 * Passwords and password hashes.
 * Form field values submitted by visitors. The one exception is the text typed into the site's own search box, recorded as the site-search term of that visit (only while tracking and click tracking are on).
 * Post, page, comment or any other WordPress content.
-* User accounts, user lists, or the email addresses of your registered users. The exceptions are the site's administration email address, sent with the connection handshake and with every Test connection request described above, and the error report you send yourself with "Report this error", which carries it so support can reply.
+* User accounts, user lists, or the email addresses of your registered users. The exceptions: the site's administration email address, sent with the connection handshake and each Test connection request, and the error report you send yourself with "Report this error", which carries it so support can reply.
 * Customer, order or payment data.
 * Anything at all about what happens inside wp-admin.
 
@@ -336,6 +334,12 @@ Those two build inputs are not included in the distributed package. Ask for them
 7. Devices report: desktop, mobile and tablet with pageviews, visitors, clicks, countries, browsers, OS, top pages and referrers.
 
 == Changelog ==
+
+= 1.1.4 =
+
+* Shared DevDome library 1.7.8: the one-time Report a bug hint is recorded through a nonce-checked request instead of on a page view.
+* Shared DevDome library 1.7.9: the DevDome dashboard lists only real problems (a feature that is off, paused or not connected is no longer an issue) and no longer says Not monitored.
+* DevDome dashboard: Analytics not connected or tracking paused are no longer listed as issues. Shorter Connect card text.
 
 = 1.1.3 =
 

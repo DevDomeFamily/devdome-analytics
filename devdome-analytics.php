@@ -3,7 +3,7 @@
  * Plugin Name: DevDome Analytics
  * Plugin URI: https://devdome.com/wp-plugins/analytics/
  * Description: Traffic analytics, visitor statistics and click tracking for WordPress, with AI referral detection and bot-filtered numbers.
- * Version: 1.1.3
+ * Version: 1.1.4
  * Author: DevDome
  * Author URI: https://devdome.com
  * License: GPLv2 or later
@@ -30,7 +30,7 @@ if ( file_exists( __DIR__ . '/wporg-build.php' ) ) {
 	require __DIR__ . '/wporg-build.php';
 }
 
-define( 'DEVDALYT_VERSION', '1.1.3' );
+define( 'DEVDALYT_VERSION', '1.1.4' );
 define( 'DEVDALYT_FILE', __FILE__ );
 define( 'DEVDALYT_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DEVDALYT_URL', plugin_dir_url( __FILE__ ) );
@@ -470,16 +470,9 @@ add_filter( 'devdcorev1_suite_register', function ( $r ) {
 			);
 		},
 		'health'   => function () {
-			$href      = admin_url( 'admin.php?page=devdome-analytics' );
-			$connected = DEVDALYT_Analytics::is_connected_cached(); // cached only: a hub render never verifies remotely (Codex round 4)
-			$tracking  = (int) get_option( 'devdalyt_tracking_enabled', 0 );
-			$score     = $connected ? ( $tracking ? 100 : 60 ) : 0;
-			$issues    = array();
-			if ( ! $connected ) {
-				$issues[] = array( 'problem' => 'Analytics is not connected.', 'why_it_matters' => 'You are not collecting traffic stats.', 'fix' => 'Connect the site in DevDome Analytics.', 'actions' => array( array( 'label' => 'Open Analytics', 'href' => $href ) ) );
-			} elseif ( ! $tracking ) {
-				$issues[] = array( 'problem' => 'Analytics tracking is paused.', 'why_it_matters' => 'No new traffic is being recorded.', 'fix' => 'Enable tracking in DevDome Analytics.', 'actions' => array( array( 'label' => 'Open Analytics', 'href' => $href ) ) );
-			}
+			// Not connected or tracking paused are the owner's choices, not problems: the dashboard lists real failures only (owner + Codex 2026-09-30).
+			$score  = 100;
+			$issues = array();
 			return array( 'score' => $score, 'status' => ( $score >= 75 ? 'good' : ( $score >= 50 ? 'warn' : 'urgent' ) ), 'scope_label' => 'Analytics', 'summary' => '', 'issues' => $issues );
 		},
 	);

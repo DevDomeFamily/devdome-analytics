@@ -418,7 +418,7 @@ class DEVDALYT_Admin {
 							<span class="bp-conn-ci">DD</span>
 							<div class="bp-conn-body">
 								<strong>Connect this site to your DevDome account</strong>
-								<span>Opening this screen only checks whether this site is already connected (it sends the site&rsquo;s domain and secret token, nothing else). Nothing about your visitors is sent until you connect and turn tracking on. Connecting sends this site&rsquo;s domain and token, its URL and name, the administrator&rsquo;s email, and the plugin, WordPress and PHP versions to analytics.devdome.com; tracking then sends cookieless page views and clicks. Details in the readme&rsquo;s External services. <a href="https://devdome.com/privacy-policy" target="_blank" rel="noopener noreferrer">Privacy Policy</a> &middot; <a href="https://devdome.com/terms-of-service" target="_blank" rel="noopener noreferrer">Terms of Service</a></span>
+								<span>Opening this screen sends the site&rsquo;s domain and token to analytics.devdome.com to check the connection. Connect also sends the site URL and name, the admin email and the plugin, WordPress and PHP versions; tracking, once on, sends cookieless page views and clicks. See the readme&rsquo;s External services section for details. <a href="https://devdome.com/privacy-policy" target="_blank" rel="noopener noreferrer">Privacy Policy</a> &middot; <a href="https://devdome.com/terms-of-service" target="_blank" rel="noopener noreferrer">Terms of Service</a></span>
 							</div>
 							<div class="bp-conn-ctl" data-panel="account">
 								<?php if ( current_user_can( devdalyt_connect_cap() ) ) : // the server refuses everyone else (DeepSeek round 9) ?>
