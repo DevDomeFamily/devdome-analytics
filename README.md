@@ -1,4 +1,4 @@
-# DevDome Analytics: Visitor Tracker, Cookieless Analytics, Site Stats & Bot Detection
+# DevDome Analytics: Bot Traffic vs Human Traffic Website Statistics
 
 [![WordPress Plugin Version](https://img.shields.io/wordpress/plugin/v/devdome-analytics?label=wp.org)](https://wordpress.org/plugins/devdome-analytics/)
 [![Active Installs](https://img.shields.io/wordpress/plugin/installs/devdome-analytics)](https://wordpress.org/plugins/devdome-analytics/)
@@ -6,7 +6,7 @@
 [![Tested WP](https://img.shields.io/wordpress/plugin/tested/devdome-analytics)](https://wordpress.org/plugins/devdome-analytics/)
 [![License GPL-2.0+](https://img.shields.io/badge/license-GPL--2.0%2B-blue.svg)](LICENSE)
 
-Cookieless analytics, visitor tracker for site stats, visitor stats, bot traffic, bot detection, AI referrals, realtime visitors and outbound clicks. A free DevDome account is required. This WordPress visitor tracker separates known bots and AI crawlers from human visitors. See key numbers inside wp-admin and detailed reports in your hosted DevDome dashboard.
+Simple to use, cookieless website visitor tracking and traffic sources with human vs bot traffic split. Google Analytics alternative for WordPress. A free DevDome account is required. This WordPress visitor tracker separates known bots and AI crawlers from human visitors. See key numbers inside wp-admin and detailed reports in your hosted DevDome dashboard.
 
 **The free alternative to Plausible, Fathom, Matomo, MonsterInsights, Google Analytics and Jetpack Stats for WordPress.**
 

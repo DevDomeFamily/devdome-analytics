@@ -1,18 +1,18 @@
-=== DevDome Analytics: Visitor Tracker, Cookieless Analytics, Site Stats & Bot Detection ===
+=== DevDome Analytics: Bot Traffic vs Human Traffic Website Statistics ===
 Contributors: devdome
-Tags: visitor tracker, cookieless analytics, outbound clicks, ai referrals, bot detection
+Tags: statistics, stats, analytics, site stats, visitor tracking
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.1.4
+Stable tag: 1.1.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Cookieless analytics, visitor tracker for site stats, visitor stats, bot traffic, bot detection, AI referrals, realtime visitors and outbound clicks.
+Simple to use, cookieless website visitor tracking and traffic sources with human vs bot traffic split. Google Analytics alternative for WordPress.
 
 == Description ==
 
-DevDome Analytics is a WordPress visitor tracker for site stats, visitor stats and outbound clicks. Review page views, sessions and traffic sources, and see realtime visitors as an aggregate count. Key metrics appear inside WordPress, while full reports are available on the hosted DevDome Analytics service. A free DevDome account is required.
+DevDome Analytics is a cookieless Google Analytics alternative for WordPress: website statistics and site stats without cookies or a cookie banner, with human and bot traffic reported separately. Review visitors, page views, sessions, traffic sources and visitor tracking over time, and see live visitors as an aggregate count. Key metrics appear inside WordPress, while full reports are available on the hosted DevDome Analytics service. A free DevDome account is required.
 
 General website tracking uses cookieless analytics on new installations, with Track Returning Visitors off by default. You can switch this setting on to recognize returning visitors across days. With the setting off, identifiers used to track outbound clicks stay in memory for the current page. Outbound click tracking can also be disabled independently.
 
@@ -334,6 +334,11 @@ Those two build inputs are not included in the distributed package. Ask for them
 7. Devices report: desktop, mobile and tablet with pageviews, visitors, clicks, countries, browsers, OS, top pages and referrers.
 
 == Changelog ==
+
+= 1.1.5 =
+
+* Shared DevDome library 1.7.10: the DevDome dashboard prints its icons through wp_kses.
+* Listing text: new title, short description and introduction.
 
 = 1.1.4 =
 

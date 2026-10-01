@@ -513,10 +513,7 @@ class DEVDALYT_Tracker {
 	/** Tear down the refresh cron (called when the switch turns OFF). The static file may
 	 *  stay — it is inert without the enqueue and is replaced on the next provision. */
 	public static function fp_unschedule() {
-		$ts = wp_next_scheduled( 'devdalyt_fp_refresh' );
-		if ( $ts ) {
-			wp_unschedule_event( $ts, 'devdalyt_fp_refresh' );
-		}
+		wp_clear_scheduled_hook( 'devdalyt_fp_refresh' ); // every instance, not only the earliest one (Codex 1.1.5 round 1)
 	}
 
 	/**

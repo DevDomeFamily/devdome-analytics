@@ -132,6 +132,9 @@ class DEVDALYT_Rest {
 		$ok = devdalyt_option_delete( 'devdcorev1_account_email' ) && $ok;
 		$ok = devdalyt_option_delete( 'devdcorev1_account_connected' ) && $ok; // legacy flag, unread since 1.5.0
 		$ok = devdalyt_option_delete( 'devdcorev1_conn_state' ) && $ok;
+		// Same as the hub Disconnect: an inventory-sharing consent belongs to the connection that ends here (Codex 1.1.5 round 1).
+		$ok = devdalyt_option_delete( 'devdcorev1_inventory_consent' ) && $ok;
+		$ok = devdalyt_option_delete( 'devdcorev1_connection_gen' ) && $ok;
 		delete_transient( 'devdcorev1_conn_checked' );
 		// The service may still have this site bound to the account; without this marker the
 		// admin screen's remote-state sync would quietly reconnect what the user just ended.
