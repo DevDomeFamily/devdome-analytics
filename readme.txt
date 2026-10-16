@@ -4,7 +4,7 @@ Tags: statistics, stats, analytics, site stats, visitor tracking
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.1.5
+Stable tag: 1.1.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -335,6 +335,13 @@ Those two build inputs are not included in the distributed package. Ask for them
 
 == Changelog ==
 
+= 1.1.6 =
+
+* Shared DevDome library 1.7.13: uninstalling the last DevDome plugin also removes the note's dismissal, the update-repair records and the per-user "Report a bug" flag; the visitor-beacon flood guard keeps one short-lived record per address and clears its expired ones itself, and behind Cloudflare it counts per visitor instead of per Cloudflare address.
+* Shared DevDome library 1.7.12: a Cloudflare visitor address header is trusted only when the connection itself comes from a Cloudflare address, so a forged header from anywhere else is ignored.
+* Shared DevDome library 1.7.11: on a subdirectory multisite, a site mapped to its own domain is its own site and no longer shares the network's connection.
+* The outbound-click relay's flood guard keeps one short-lived record per visitor address and clears its expired ones itself. It used to write a new record every minute per address, which sat in the database until the daily cleanup.
+
 = 1.1.5 =
 
 * Shared DevDome library 1.7.10: the DevDome dashboard prints its icons through wp_kses.
@@ -431,3 +438,11 @@ Those two build inputs are not included in the distributed package. Ask for them
 * The tracking snippet is enqueued too: the plugin no longer writes script tags into the page markup. Outbound-click counting is unchanged, including on sites where a blocker stops the tracker file from loading.
 * Internal rename: every function, class, constant, option and transient the plugin owns now carries its own identifier prefix. Existing settings and your DevDome connection are carried across automatically.
 * Fixed a fatal error that could break wp-admin on sites running several DevDome plugins when this one loaded first.
+
+== Upgrade Notice ==
+
+= 1.1.6 =
+Smaller database footprint for the outbound-click relay. Tracking and the dashboard are unaffected.
+
+= 1.1.5 =
+Shared DevDome library 1.7.10 and the new listing text. Tracking and the dashboard are unaffected.

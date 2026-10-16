@@ -90,14 +90,26 @@ class DEVDALYT_Tracker {
 			exit;
 		}
 		{
-			$ip   = self::limiter_ip(); // the peer, or the Cloudflare header only when Cloudflare delivered the request (Codex round 1)
-			$key  = 'devdalyt_dde_' . md5( $ip ) . '_' . (int) floor( time() / 60 );
-			$hits = (int) get_transient( $key );
-			if ( $hits >= 120 ) {
+			$ip = self::limiter_ip(); // the peer, or the Cloudflare header only when Cloudflare delivered the request (Codex round 1)
+			// One record per address that resets every minute, not one per address per minute (audit 2026-10-16, the
+			// same change as the shared library's beacon guard): the old key carried the minute, so without an object
+			// cache every visitor minted two fresh wp_options rows a minute that sat expired until WordPress's daily
+			// sweep. A returning address reuses its row, and about one request in fifty removes the expired ones.
+			$key    = 'devdalyt_dde_' . md5( $ip );
+			$minute = (int) floor( time() / 60 );
+			$b      = get_transient( $key );
+			if ( ! is_array( $b ) || ! isset( $b['m'], $b['n'] ) || (int) $b['m'] !== $minute ) {
+				$b = array( 'm' => $minute, 'n' => 0 );
+			}
+			if ( (int) $b['n'] >= 120 ) {
 				status_header( 429 );
 				exit;
 			}
-			set_transient( $key, $hits + 1, 120 );
+			$b['n'] = (int) $b['n'] + 1;
+			set_transient( $key, $b, 120 );
+			if ( ! wp_using_ext_object_cache() && 1 === wp_rand( 1, 50 ) ) {
+				self::dde_rate_sweep();
+			}
 		}
 		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- public stateless beacon, no form/state; body is validated below and the ingest re-validates and scores it.
 		$body = file_get_contents( 'php://input' );
@@ -207,6 +219,21 @@ class DEVDALYT_Tracker {
 			return true;
 		}
 		return DEVDALYT_Analytics::is_connected_cached(); // cached only: never a request or an identity rewrite from a visitor (Codex round 4)
+	}
+
+	/** Delete this guard's expired transient pairs (the value row and its timeout row), nothing else. */
+	public static function dde_rate_sweep() {
+		global $wpdb;
+		$like = $wpdb->esc_like( '_transient_timeout_devdalyt_dde_' ) . '%';
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- scoped sweep of this plugin's own expired transients, the way core's delete_expired_transients() works.
+		$wpdb->query( $wpdb->prepare(
+			"DELETE a, b FROM {$wpdb->options} a, {$wpdb->options} b
+			 WHERE a.option_name LIKE %s
+			   AND b.option_name = CONCAT('_transient_', SUBSTRING(a.option_name, 20))
+			   AND a.option_value < %d",
+			$like,
+			time()
+		) );
 	}
 
 	/** The address a relay's flood guard keys on: the Cloudflare header counts only when Cloudflare delivered the request. */
